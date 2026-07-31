@@ -1,0 +1,133 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model AppSettings {
+  id            Int      @id @default(1)
+  pinHash       String
+  currency      String   @default("USD")
+  monthStartDay Int      @default(1)
+  onboarded     Boolean  @default(false)
+  updatedAt     DateTime @updatedAt
+}
+
+enum AccountType {
+  CHECKING
+  SAVINGS
+  CREDIT
+  CASH
+  INVESTMENT
+  OTHER
+}
+
+model Account {
+  id           String        @id @default(cuid())
+  name         String
+  type         AccountType   @default(CHECKING)
+  institution  String?
+  currency     String        @default("USD")
+  balanceCents Int           @default(0)
+  archived     Boolean       @default(false)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  transactions Transaction[]
+  importBatches ImportBatch[]
+}
+
+model Category {
+  id           String         @id @default(cuid())
+  name         String         @unique
+  group        String
+  icon         String?
+  isIncome     Boolean        @default(false)
+  isTransfer   Boolean        @default(false)
+  sortOrder    Int            @default(0)
+  createdAt    DateTime       @default(now())
+  transactions Transaction[]
+  rules        CategoryRule[]
+  budgets      Budget[]
+}
+
+model CategoryRule {
+  id         String   @id @default(cuid())
+  pattern    String
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  priority   Int      @default(100)
+  createdAt  DateTime @default(now())
+
+  @@index([pattern])
+}
+
+model Transaction {
+  id           String       @id @default(cuid())
+  accountId    String
+  account      Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  date         DateTime
+  payee        String
+  memo         String?
+  amountCents  Int
+  categoryId   String?
+  category     Category?    @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  externalId   String?
+  importBatchId String?
+  importBatch  ImportBatch? @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
+  pending      Boolean      @default(false)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@unique([accountId, externalId])
+  @@index([date])
+  @@index([categoryId])
+  @@index([payee])
+}
+
+model Budget {
+  id           String   @id @default(cuid())
+  categoryId   String
+  category     Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  month        String
+  limitCents   Int
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([categoryId, month])
+  @@index([month])
+}
+
+enum GoalStatus {
+  ACTIVE
+  PAUSED
+  COMPLETED
+}
+
+model Goal {
+  id              String     @id @default(cuid())
+  name            String
+  targetCents     Int
+  currentCents    Int        @default(0)
+  targetDate      DateTime?
+  status          GoalStatus @default(ACTIVE)
+  accountId       String?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+}
+
+model ImportBatch {
+  id             String        @id @default(cuid())
+  accountId      String
+  account        Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  filename       String
+  format         String
+  rowCount       Int           @default(0)
+  importedCount  Int           @default(0)
+  skippedCount   Int           @default(0)
+  undone         Boolean       @default(false)
+  createdAt      DateTime      @default(now())
+  transactions   Transaction[]
+}

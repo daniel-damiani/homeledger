@@ -1,0 +1,51 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# build
+.next/
+out/
+build/
+dist/
+
+# env & secrets
+.env
+.env.local
+.env.*.local
+
+# financial data & backups (keep folder)
+backups/*
+!backups/.gitkeep
+*.sql.gz
+*.dump
+*.bak
+
+# user uploads / real statements
+uploads/
+*.ofx
+!fixtures/**
+!fixtures/**/*.ofx
+!fixtures/**/*.csv
+!fixtures/**/*.txt
+
+# debug / IDE
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.DS_Store
+*.pem
+.vscode/
+.idea/
+*.swp
+
+# typescript
+next-env.d.ts
+*.tsbuildinfo
+
+# prisma
+prisma/*.db
+prisma/*.db-journal
+
+# docker
+.docker/
