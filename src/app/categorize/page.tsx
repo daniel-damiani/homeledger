@@ -8,17 +8,23 @@ export const dynamic = "force-dynamic";
 export default async function CategorizePage() {
   const items = await uncategorizedQueue(80);
   const categories = await prisma.category.findMany({
-    where: { isTransfer: false },
-    orderBy: { sortOrder: "asc" },
+    orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
   });
 
   return (
     <main className="shell">
       <AppNav pathname="/categorize" />
       <h1>Categorize</h1>
-      <p className="lede">Clear the queue. “Always like this” creates a payee rule.</p>
+      <p className="lede">
+        Clear the queue. “Always like this” creates a payee rule. Card payments and
+        account moves belong under <strong>Credit Payment</strong> /{" "}
+        <strong>Transfer</strong> so they don’t count as spending twice.
+      </p>
       <CategorizeQueue
-        categories={categories.map((c) => ({ id: c.id, name: c.name }))}
+        categories={categories.map((c) => ({
+          id: c.id,
+          name: c.isTransfer ? `${c.name} (transfer)` : c.name,
+        }))}
         items={items.map((t) => ({
           id: t.id,
           payee: t.payee,

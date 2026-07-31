@@ -1,0 +1,8 @@
+{
+  "name": "citi-savings",
+  "dateColumn": "Date",
+  "payeeColumn": "Description",
+  "debitColumn": "Debit",
+  "creditColumn": "Credit",
+  "invertAmount": false
+}

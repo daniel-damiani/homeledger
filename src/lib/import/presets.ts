@@ -28,7 +28,7 @@ export function loadPreset(name: string): ImportPreset {
 }
 
 export function guessPreset(headers: string[]): string {
-  const h = headers.map((x) => x.toLowerCase().trim());
+  const h = headers.map((x) => x.toLowerCase().trim()).filter(Boolean);
   const has = (name: string) => h.includes(name);
 
   // Chase credit card export
@@ -39,9 +39,16 @@ export function guessPreset(headers: string[]): string {
   if ((has("posting date") || has("post date")) && has("description") && has("amount")) {
     if (has("details") || has("type")) return "chase";
   }
+  // Citi savings / checking: Status, Date, Description, Debit, Credit
+  if (has("date") && has("description") && has("debit") && has("credit")) {
+    if (has("status") || !has("amount")) return "citi-savings";
+  }
+  // Bank of America-style debit/credit with transaction date
+  if (has("transaction date") && has("debit") && has("credit")) {
+    return "bank-of-america";
+  }
   if (has("date") && has("description") && has("amount")) {
     if (h.some((x) => x.includes("card member"))) return "amex";
-    if (has("transaction date") && has("debit") && has("credit")) return "bank-of-america";
     if (has("transaction date") && has("transaction amount")) return "capital-one";
   }
   return "generic";

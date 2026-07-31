@@ -19,8 +19,10 @@ function parseMoneyToCents(raw) {
 function parseDateLoose(raw) {
   const s = String(raw).trim();
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) return new Date(s.slice(0, 10) + "T12:00:00Z");
-  const mdy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-  if (mdy) return new Date(Date.UTC(+mdy[3], +mdy[1] - 1, +mdy[2], 12));
+  const mdySlash = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (mdySlash) return new Date(Date.UTC(+mdySlash[3], +mdySlash[1] - 1, +mdySlash[2], 12));
+  const mdyDash = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})/);
+  if (mdyDash) return new Date(Date.UTC(+mdyDash[3], +mdyDash[1] - 1, +mdyDash[2], 12));
   const ofx = s.match(/^(\d{4})(\d{2})(\d{2})/);
   if (ofx) return new Date(Date.UTC(+ofx[1], +ofx[2] - 1, +ofx[3], 12));
   return new Date(s);
@@ -126,12 +128,26 @@ assert(
   "chase credit sales should invert to expenses"
 );
 
+const citiSavings = fs.readFileSync(
+  path.join(root, "fixtures/sample-citi-savings.csv"),
+  "utf8"
+);
+const citiPreset = JSON.parse(
+  fs.readFileSync(path.join(root, "presets/import/citi-savings.json"), "utf8")
+);
+const citiRows = parseCsv(citiSavings, citiPreset);
+assert(citiRows.length >= 3, "citi savings csv too short");
+assert(citiRows.some((r) => r.amountCents < 0), "citi debits should be negative");
+assert(citiRows.some((r) => r.amountCents > 0), "citi credits should be positive");
+assert(!Number.isNaN(citiRows[0].date.getTime()), "citi MM-DD-YYYY dates should parse");
+
 const hash = createHash("sha1").update("smoke").digest("hex");
 assert(hash.length === 40, "hash");
 
 console.log("smoke:parsers OK", {
   chase: chaseRows.length,
   chaseCredit: chaseCreditRows.length,
+  citiSavings: citiRows.length,
   generic: genericRows.length,
   ofx: ofxRows.length,
   txt: txtRows.length,

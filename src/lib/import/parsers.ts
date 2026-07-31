@@ -149,6 +149,20 @@ function findAmountCents(rec: Record<string, string>, preset: ImportPreset): num
     if (debit || credit) return credit - Math.abs(debit);
   }
 
+  // Auto Debit/Credit when those columns exist (Citi, BoA, etc.)
+  let autoDebit = "";
+  let autoCredit = "";
+  for (const [k, v] of Object.entries(rec)) {
+    const nk = normalizeKey(k);
+    if (nk === "debit" || nk === "withdrawal") autoDebit = v ?? "";
+    if (nk === "credit" || nk === "deposit") autoCredit = v ?? "";
+  }
+  if (autoDebit || autoCredit) {
+    const debit = parseAmountCell(autoDebit) ?? 0;
+    const credit = parseAmountCell(autoCredit) ?? 0;
+    if (debit || credit) return credit - Math.abs(debit);
+  }
+
   for (const [k, v] of Object.entries(rec)) {
     const nk = normalizeKey(k);
     if (!nk.includes("amount") && nk !== "amt") continue;
@@ -160,7 +174,15 @@ function findAmountCents(rec: Record<string, string>, preset: ImportPreset): num
   const candidates: number[] = [];
   for (const [k, v] of Object.entries(rec)) {
     const nk = normalizeKey(k);
-    if (nk.includes("date") || nk.includes("post") || nk.includes("description") || nk === "payee") {
+    if (
+      nk.includes("date") ||
+      nk.includes("post") ||
+      nk.includes("description") ||
+      nk === "payee" ||
+      nk === "debit" ||
+      nk === "credit" ||
+      nk === "status"
+    ) {
       continue;
     }
     const parsed = parseAmountCell(v);
@@ -202,10 +224,16 @@ export function sampleAmountColumn(
 export function parseDateLoose(raw: string): Date {
   const s = raw.trim();
   if (!s) return new Date(NaN);
+  // ISO first (2026-07-29) — must precede MDY-with-hyphens
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) return new Date(s.slice(0, 10) + "T12:00:00Z");
-  const mdy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-  if (mdy) {
-    return new Date(Date.UTC(+mdy[3], +mdy[1] - 1, +mdy[2], 12));
+  const mdySlash = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (mdySlash) {
+    return new Date(Date.UTC(+mdySlash[3], +mdySlash[1] - 1, +mdySlash[2], 12));
+  }
+  // Citi and some banks: 07-29-2026
+  const mdyDash = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})/);
+  if (mdyDash) {
+    return new Date(Date.UTC(+mdyDash[3], +mdyDash[1] - 1, +mdyDash[2], 12));
   }
   const ofx = s.match(/^(\d{4})(\d{2})(\d{2})/);
   if (ofx) {

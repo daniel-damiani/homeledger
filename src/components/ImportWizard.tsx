@@ -25,6 +25,7 @@ const DEFAULT_PRESETS = [
   "generic",
   "chase",
   "chase-credit",
+  "citi-savings",
   "amex",
   "capital-one",
   "bank-of-america",
