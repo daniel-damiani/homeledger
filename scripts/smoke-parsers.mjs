@@ -112,11 +112,26 @@ const txt = fs.readFileSync(path.join(root, "fixtures/sample-statement.txt"), "u
 const txtRows = parseText(txt);
 assert(txtRows.length >= 5, "txt statement too short");
 
+const chaseCredit = fs.readFileSync(
+  path.join(root, "fixtures/sample-chase-credit.csv"),
+  "utf8"
+);
+const chaseCreditPreset = JSON.parse(
+  fs.readFileSync(path.join(root, "presets/import/chase-credit.json"), "utf8")
+);
+const chaseCreditRows = parseCsv(chaseCredit, chaseCreditPreset);
+assert(chaseCreditRows.length >= 8, "chase credit csv too short");
+assert(
+  chaseCreditRows.some((r) => r.amountCents < 0),
+  "chase credit sales should invert to expenses"
+);
+
 const hash = createHash("sha1").update("smoke").digest("hex");
 assert(hash.length === 40, "hash");
 
 console.log("smoke:parsers OK", {
   chase: chaseRows.length,
+  chaseCredit: chaseCreditRows.length,
   generic: genericRows.length,
   ofx: ofxRows.length,
   txt: txtRows.length,
