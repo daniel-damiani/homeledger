@@ -34,10 +34,12 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY docker-entrypoint.sh /app/docker-entrypoint.sh
 
-RUN chmod +x /app/docker-entrypoint.sh \
+# Normalize CRLF → LF (Windows checkouts) so Linux can exec the shebang
+RUN sed -i 's/\r$//' /app/docker-entrypoint.sh \
+  && chmod +x /app/docker-entrypoint.sh \
   && mkdir -p /app/backups \
-  && chown -R nextjs:nodejs /app/backups
+  && chown -R nextjs:nodejs /app/backups /app/docker-entrypoint.sh
 
 USER nextjs
 EXPOSE 3000
-ENTRYPOINT ["/app/docker-entrypoint.sh"]
+ENTRYPOINT ["/bin/bash", "/app/docker-entrypoint.sh"]
