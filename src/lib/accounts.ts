@@ -42,6 +42,11 @@ export async function updateAccount(
   return prisma.account.update({ where: { id }, data });
 }
 
+/** Deletes account and cascaded transactions / import batches. */
+export async function deleteAccount(id: string) {
+  return prisma.account.delete({ where: { id } });
+}
+
 export async function adjustBalance(accountId: string, deltaCents: number) {
   return prisma.account.update({
     where: { id: accountId },

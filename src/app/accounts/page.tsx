@@ -1,6 +1,7 @@
 import { AppNav } from "@/components/AppNav";
 import { Money } from "@/components/Money";
 import { AccountForm } from "@/components/AccountForm";
+import { DeleteAccountButton } from "@/components/DeleteAccountButton";
 import { ManualTxnForm } from "@/components/ManualTxnForm";
 import { listAccounts } from "@/lib/accounts";
 import { prisma } from "@/lib/db";
@@ -25,9 +26,19 @@ export default async function AccountsPage() {
       <div className="grid cols-3" style={{ marginBottom: "1rem" }}>
         {accounts.map((a) => (
           <section key={a.id} className="panel">
-            <h3>
-              {a.name} {a.archived ? "(archived)" : ""}
-            </h3>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: "0.75rem",
+                alignItems: "flex-start",
+              }}
+            >
+              <h3 style={{ margin: 0 }}>
+                {a.name} {a.archived ? "(archived)" : ""}
+              </h3>
+              <DeleteAccountButton accountId={a.id} accountName={a.name} />
+            </div>
             <div className="stat">
               <Money cents={a.balanceCents} currency={a.currency} />
             </div>
