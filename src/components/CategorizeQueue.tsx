@@ -20,7 +20,10 @@ export function CategorizeQueue({
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
+  const [suggesting, setSuggesting] = useState(false);
   const [picked, setPicked] = useState<Record<string, string>>({});
+  const [flash, setFlash] = useState("");
+  const [error, setError] = useState("");
 
   async function apply(txnId: string, always: boolean, payee: string) {
     const categoryId = picked[txnId];
@@ -46,12 +49,72 @@ export function CategorizeQueue({
     }
   }
 
+  async function suggestWithOllama() {
+    setSuggesting(true);
+    setError("");
+    setFlash("");
+    try {
+      const res = await fetch("/api/categorize/suggest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ txnIds: items.map((i) => i.id) }),
+        signal: AbortSignal.timeout(600_000),
+      });
+      const data = (await res.json()) as {
+        suggestions?: Record<string, string>;
+        error?: string;
+        warning?: string;
+      };
+      if (!res.ok) {
+        setError(data.error || "Suggest failed");
+        return;
+      }
+      const suggestions = data.suggestions ?? {};
+      setPicked((prev) => ({ ...prev, ...suggestions }));
+      const n = Object.keys(suggestions).length;
+      setFlash(
+        n
+          ? `Filled ${n} suggestion${n === 1 ? "" : "s"} — review and Apply.`
+          : "No confident suggestions — pick categories manually."
+      );
+      if (data.warning) setError(data.warning);
+    } catch {
+      setError("Could not reach suggest API");
+    } finally {
+      setSuggesting(false);
+    }
+  }
+
   if (items.length === 0) {
     return <p className="lede">Queue is clear — nice work.</p>;
   }
 
   return (
     <div className="grid" style={{ gap: "0.75rem" }}>
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: "0.65rem",
+          alignItems: "center",
+          marginBottom: "0.25rem",
+        }}
+      >
+        <button
+          className="btn"
+          type="button"
+          disabled={suggesting}
+          onClick={() => void suggestWithOllama()}
+        >
+          {suggesting ? "Suggesting…" : "Suggest with Ollama"}
+        </button>
+        <span className="stat muted">
+          Fills the dropdowns; you still confirm Apply once / Always.
+        </span>
+      </div>
+      {flash ? <div className="flash">{flash}</div> : null}
+      {error ? <div className="flash error">{error}</div> : null}
+
       {items.map((item) => {
         const categoryId = picked[item.id] ?? "";
         const canApply = Boolean(categoryId) && busy !== item.id;

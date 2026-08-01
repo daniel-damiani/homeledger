@@ -135,8 +135,8 @@ export function ImportWizard({
       <section className="panel">
         <h2>Import a statement</h2>
         <p className="lede">
-          Prefer Chase <strong>CSV</strong> (Download activity), not the PDF statement. Preview before
-          commit. Duplicates are skipped.
+          Prefer bank <strong>CSV</strong> when available. OFX/QFX works too (including Principal
+          401k). Preview before commit. Duplicates are skipped.
         </p>
         {error ? <div className="flash error">{error}</div> : null}
         {result ? <div className="flash">{result}</div> : null}

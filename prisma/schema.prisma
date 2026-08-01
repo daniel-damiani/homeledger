@@ -8,12 +8,14 @@ datasource db {
 }
 
 model AppSettings {
-  id            Int      @id @default(1)
-  pinHash       String
-  currency      String   @default("USD")
-  monthStartDay Int      @default(1)
-  onboarded     Boolean  @default(false)
-  updatedAt     DateTime @updatedAt
+  id                      Int      @id @default(1)
+  pinHash                 String
+  currency                String   @default("USD")
+  monthStartDay           Int      @default(1)
+  onboarded               Boolean  @default(false)
+  /** Target surplus (income − non-transfer spending) to hit each calendar month. */
+  monthlySavingsGoalCents Int      @default(0)
+  updatedAt               DateTime @updatedAt
 }
 
 enum AccountType {
@@ -22,6 +24,7 @@ enum AccountType {
   CREDIT
   CASH
   INVESTMENT
+  LOAN
   OTHER
 }
 
@@ -37,6 +40,9 @@ model Account {
   updatedAt    DateTime      @updatedAt
   transactions Transaction[]
   importBatches ImportBatch[]
+  recurringFrom RecurringPayment[] @relation("RecurringFrom")
+  recurringTo   RecurringPayment[] @relation("RecurringTo")
+  loanLinkRules LoanLinkRule[]
 }
 
 model Category {
@@ -51,6 +57,8 @@ model Category {
   transactions Transaction[]
   rules        CategoryRule[]
   budgets      Budget[]
+  recurring    RecurringPayment[]
+  loanLinks    LoanLinkRule[]
 }
 
 model CategoryRule {
@@ -77,6 +85,8 @@ model Transaction {
   externalId   String?
   importBatchId String?
   importBatch  ImportBatch? @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
+  /** When set, this bank/checking txn already has a paired loan principal reduction. */
+  loanMirrorId String?      @unique
   pending      Boolean      @default(false)
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
@@ -130,4 +140,39 @@ model ImportBatch {
   undone         Boolean       @default(false)
   createdAt      DateTime      @default(now())
   transactions   Transaction[]
+}
+
+model RecurringPayment {
+  id            String    @id @default(cuid())
+  name          String
+  fromAccountId String
+  fromAccount   Account   @relation("RecurringFrom", fields: [fromAccountId], references: [id], onDelete: Cascade)
+  toAccountId   String?
+  toAccount     Account?  @relation("RecurringTo", fields: [toAccountId], references: [id], onDelete: SetNull)
+  payee         String
+  amountCents   Int
+  dayOfMonth    Int
+  categoryId    String?
+  category      Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  memo          String?
+  active        Boolean   @default(true)
+  lastPostedOn  DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([active])
+  @@index([fromAccountId])
+}
+
+/** Auto-apply imported checking debits to a loan when payee matches. */
+model LoanLinkRule {
+  id            String   @id @default(cuid())
+  pattern       String
+  loanAccountId String
+  loanAccount   Account  @relation(fields: [loanAccountId], references: [id], onDelete: Cascade)
+  categoryId    String?
+  category      Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  createdAt     DateTime @default(now())
+
+  @@index([pattern])
 }

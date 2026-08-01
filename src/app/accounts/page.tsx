@@ -1,27 +1,31 @@
+import Link from "next/link";
 import { AppNav } from "@/components/AppNav";
 import { Money } from "@/components/Money";
 import { AccountForm } from "@/components/AccountForm";
 import { DeleteAccountButton } from "@/components/DeleteAccountButton";
 import { ManualTxnForm } from "@/components/ManualTxnForm";
+import { RecurringPaymentsPanel } from "@/components/RecurringPaymentsPanel";
 import { listAccounts } from "@/lib/accounts";
+import { applyDueRecurringPayments, listRecurringPayments } from "@/lib/recurring";
 import { prisma } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
 export default async function AccountsPage() {
+  await applyDueRecurringPayments();
   const accounts = await listAccounts(true);
+  const active = accounts.filter((a) => !a.archived);
   const categories = await prisma.category.findMany({ orderBy: { sortOrder: "asc" } });
-  const recent = await prisma.transaction.findMany({
-    take: 25,
-    orderBy: { date: "desc" },
-    include: { account: true, category: true },
-  });
+  const recurring = await listRecurringPayments();
 
   return (
     <main className="shell">
       <AppNav pathname="/accounts" />
       <h1>Accounts</h1>
-      <p className="lede">Balances update when you import or add transactions.</p>
+      <p className="lede">
+        Manage accounts, manual entries, and recurring autopay. Browse and filter history on{" "}
+        <Link href="/transactions">Transactions</Link>.
+      </p>
 
       <div className="grid cols-3" style={{ marginBottom: "1rem" }}>
         {accounts.map((a) => (
@@ -50,12 +54,16 @@ export default async function AccountsPage() {
         ))}
       </div>
 
-      <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1rem" }}>
+      <div
+        className="grid"
+        style={{ gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1rem" }}
+      >
         <AccountForm />
-        {accounts[0] ? (
+        {active[0] ? (
           <ManualTxnForm
-            accountId={accounts.find((a) => !a.archived)?.id ?? accounts[0].id}
+            accounts={active.map((a) => ({ id: a.id, name: a.name, type: a.type }))}
             categories={categories}
+            defaultAccountId={active[0].id}
           />
         ) : (
           <section className="panel">
@@ -64,40 +72,30 @@ export default async function AccountsPage() {
         )}
       </div>
 
-      <section className="panel">
-        <h2>Recent transactions</h2>
-        <div className="table-wrap">
-          <table className="data">
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Account</th>
-                <th>Payee</th>
-                <th>Category</th>
-                <th>Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              {recent.map((t) => (
-                <tr key={t.id}>
-                  <td>{t.date.toISOString().slice(0, 10)}</td>
-                  <td>{t.account.name}</td>
-                  <td>{t.payee}</td>
-                  <td>{t.category?.name ?? "—"}</td>
-                  <td>
-                    <Money cents={t.amountCents} />
-                  </td>
-                </tr>
-              ))}
-              {recent.length === 0 ? (
-                <tr>
-                  <td colSpan={5}>No transactions yet.</td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
+      {active.length > 0 ? (
+        <div style={{ marginBottom: "1rem" }}>
+          <RecurringPaymentsPanel
+            accounts={active.map((a) => ({ id: a.id, name: a.name, type: a.type }))}
+            categories={categories}
+            initial={recurring.map((r) => ({
+              id: r.id,
+              name: r.name,
+              payee: r.payee,
+              amountCents: r.amountCents,
+              dayOfMonth: r.dayOfMonth,
+              active: r.active,
+              lastPostedOn: r.lastPostedOn?.toISOString() ?? null,
+              fromAccount: { id: r.fromAccount.id, name: r.fromAccount.name },
+              toAccount: r.toAccount
+                ? { id: r.toAccount.id, name: r.toAccount.name }
+                : null,
+              category: r.category
+                ? { id: r.category.id, name: r.category.name }
+                : null,
+            }))}
+          />
         </div>
-      </section>
+      ) : null}
     </main>
   );
 }

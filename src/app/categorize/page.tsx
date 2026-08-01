@@ -16,7 +16,8 @@ export default async function CategorizePage() {
       <AppNav pathname="/categorize" />
       <h1>Categorize</h1>
       <p className="lede">
-        Clear the queue. “Always like this” creates a payee rule. Card payments and
+        Clear the queue. Use <strong>Suggest with Ollama</strong> to pre-fill categories,
+        then Apply once or Always like this (creates a payee rule). Card payments and
         account moves belong under <strong>Credit Payment</strong> /{" "}
         <strong>Transfer</strong> so they don’t count as spending twice.
       </p>

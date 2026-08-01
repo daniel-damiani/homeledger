@@ -1,7 +1,17 @@
 import { NextResponse } from "next/server";
 import { isAuthenticated } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { dollarsToCents } from "@/lib/money";
+import { dollarsToCents, formatMonthKey } from "@/lib/money";
+
+function monthsThroughYearEnd(startMonth: string): string[] {
+  const [y, m] = startMonth.split("-").map(Number);
+  if (!y || !m) return [startMonth];
+  const out: string[] = [];
+  for (let month = m; month <= 12; month++) {
+    out.push(formatMonthKey(new Date(Date.UTC(y, month - 1, 1))));
+  }
+  return out;
+}
 
 export async function POST(req: Request) {
   if (!(await isAuthenticated())) {
@@ -11,13 +21,24 @@ export async function POST(req: Request) {
   const month = String(body.month || "");
   const categoryId = String(body.categoryId || "");
   const limitCents = dollarsToCents(Number(body.limit || 0));
+  const throughYearEnd = Boolean(body.throughYearEnd);
   if (!month || !categoryId) {
     return NextResponse.json({ error: "month and categoryId required" }, { status: 400 });
   }
-  const budget = await prisma.budget.upsert({
-    where: { categoryId_month: { categoryId, month } },
-    create: { categoryId, month, limitCents },
-    update: { limitCents },
+
+  const months = throughYearEnd ? monthsThroughYearEnd(month) : [month];
+  const budgets = [];
+  for (const mo of months) {
+    const budget = await prisma.budget.upsert({
+      where: { categoryId_month: { categoryId, month: mo } },
+      create: { categoryId, month: mo, limitCents },
+      update: { limitCents },
+    });
+    budgets.push(budget);
+  }
+  return NextResponse.json({
+    count: budgets.length,
+    months,
+    budget: budgets[0],
   });
-  return NextResponse.json(budget);
 }

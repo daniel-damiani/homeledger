@@ -112,7 +112,7 @@ export async function buildCoachTips(month = formatMonthKey()): Promise<CoachTip
   const creditAccounts = await prisma.account.findMany({
     where: { type: "CREDIT", archived: false },
   });
-  const creditDebt = creditAccounts.reduce((s, a) => s + a.balanceCents, 0);
+  const creditDebt = creditAccounts.reduce((s, a) => s + Math.abs(a.balanceCents), 0);
   if (creditDebt > 10000) {
     tips.push({
       id: "credit-focus",

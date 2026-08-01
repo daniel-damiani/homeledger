@@ -297,30 +297,201 @@ export function parseCsvContent(
   return rows;
 }
 
+function ofxTag(block: string, tag: string): string {
+  const re = new RegExp(`<${tag}>([^\\n\\r<]+)`, "i");
+  const m = block.match(re);
+  return m ? m[1].trim() : "";
+}
+
+/** Map CUSIP/ticker → security name from SECLIST. */
+function parseOfxSecurities(content: string): Map<string, string> {
+  const map = new Map<string, string>();
+  const chunks = content.split(/<(?:STOCKINFO|MFINFO|OPTINFO|DEBTINFO|OTHERINFO)>/i).slice(1);
+  for (const chunk of chunks) {
+    const id = ofxTag(chunk, "UNIQUEID");
+    const name = ofxTag(chunk, "SECNAME") || ofxTag(chunk, "TICKER");
+    if (id && name) map.set(id, name);
+  }
+  return map;
+}
+
+function pushOfxRow(
+  rows: ParsedRow[],
+  opts: {
+    dateRaw: string;
+    amountCents: number;
+    payee: string;
+    memo?: string;
+    fitid?: string;
+  }
+) {
+  if (!opts.dateRaw && opts.amountCents === 0) return;
+  const date = parseDateLoose(opts.dateRaw);
+  const safeDate = Number.isNaN(date.getTime()) ? new Date() : date;
+  const payee = opts.payee.trim() || "OFX transaction";
+  const externalId =
+    opts.fitid ||
+    rowExternalId([
+      safeDate.toISOString().slice(0, 10),
+      payee,
+      String(opts.amountCents),
+      opts.memo ?? "",
+    ]);
+  rows.push({
+    date: safeDate,
+    payee,
+    memo: opts.memo,
+    amountCents: opts.amountCents,
+    externalId,
+  });
+}
+
+const INV_BUY_TAGS = ["BUYMF", "BUYSTOCK", "BUYDEBT", "BUYOPT", "BUYOTHER"];
+const INV_SELL_TAGS = ["SELLMF", "SELLSTOCK", "SELLDEBT", "SELLOPT", "SELLOTHER"];
+
+function isContributionMemo(memo: string): boolean {
+  return /contrib|match|deposit|payroll|deferral|loan\s*repay|rollover|pretax|roth/i.test(
+    memo
+  );
+}
+
+function isWithdrawalMemo(memo: string): boolean {
+  return /withdraw|distribut|hardship|loan\s*issu|cash\s*out/i.test(memo);
+}
+
+function isExchangeMemo(memo: string): boolean {
+  return /exchange|rebalanc|\btransfer\b|convert|switch/i.test(memo);
+}
+
+/**
+ * Parse bank STMTTRN and investment INVTRANLIST aggregates (Principal 401k QFX, etc.).
+ *
+ * HomeLedger tracks one balance per account (not share lots), so we import cash-moving
+ * activity and contribution/withdrawal buys-sells — not fund-to-fund exchanges.
+ */
 export function parseOfxContent(content: string): ParsedRow[] {
   const rows: ParsedRow[] = [];
-  const blocks = content.split(/<STMTTRN>/i).slice(1);
-  for (const block of blocks) {
-    const get = (tag: string) => {
-      const m = block.match(new RegExp(`<${tag}>([^\\n\\r<]+)`, "i"));
-      return m ? m[1].trim() : "";
-    };
-    const dateRaw = get("DTPOSTED") || get("DTUSER");
-    const amountRaw = get("TRNAMT");
-    const payee = get("NAME") || get("PAYEE") || get("MEMO") || "OFX transaction";
-    const memo = get("MEMO") || undefined;
-    const fitid = get("FITID");
+  const securities = parseOfxSecurities(content);
+  const isInvestment = /<INVSTMTMSGSRSV1>|<INVTRANLIST>|<BUYMF>|<INVBANKTRAN>/i.test(
+    content
+  );
+
+  // Bank-style transactions (checking QFX + cash activity inside brokerage/401k)
+  for (const block of content.split(/<STMTTRN>/i).slice(1)) {
+    const amountRaw = ofxTag(block, "TRNAMT");
     if (!amountRaw) continue;
-    const amountCents = parseMoneyToCents(amountRaw);
-    const date = parseDateLoose(dateRaw);
-    const safeDate = Number.isNaN(date.getTime()) ? new Date() : date;
-    const externalId =
-      fitid ||
-      rowExternalId([safeDate.toISOString().slice(0, 10), payee, String(amountCents)]);
-    rows.push({ date: safeDate, payee, memo, amountCents, externalId });
+    pushOfxRow(rows, {
+      dateRaw: ofxTag(block, "DTPOSTED") || ofxTag(block, "DTUSER"),
+      amountCents: parseMoneyToCents(amountRaw),
+      payee:
+        ofxTag(block, "NAME") ||
+        ofxTag(block, "PAYEE") ||
+        ofxTag(block, "MEMO") ||
+        "OFX transaction",
+      memo: ofxTag(block, "MEMO") || undefined,
+      fitid: ofxTag(block, "FITID") || undefined,
+    });
   }
+
+  if (!isInvestment) return rows;
+
+  const hadCashTxns = rows.length > 0;
+
+  // Explicit investment expenses (fees)
+  for (const block of content.split(/<INVEXPENSE>/i).slice(1)) {
+    const totalRaw = ofxTag(block, "TOTAL");
+    if (!totalRaw) continue;
+    const memo = ofxTag(block, "MEMO") || "Investment expense";
+    let cents = parseMoneyToCents(totalRaw);
+    if (cents > 0) cents = -cents;
+    pushOfxRow(rows, {
+      dateRaw: ofxTag(block, "DTTRADE") || ofxTag(block, "DTPOSTED"),
+      amountCents: cents,
+      payee: memo,
+      memo,
+      fitid: ofxTag(block, "FITID") || undefined,
+    });
+  }
+
+  // Collect buy aggregates
+  type InvAgg = {
+    tag: string;
+    memo: string;
+    totalCents: number;
+    dateRaw: string;
+    fitid: string;
+    secName?: string;
+  };
+  const buys: InvAgg[] = [];
+  for (const tag of INV_BUY_TAGS) {
+    for (const block of content.split(new RegExp(`<${tag}>`, "i")).slice(1)) {
+      const totalRaw = ofxTag(block, "TOTAL");
+      if (!totalRaw) continue;
+      const secId = ofxTag(block, "UNIQUEID");
+      buys.push({
+        tag,
+        memo: ofxTag(block, "MEMO") || tag,
+        totalCents: parseMoneyToCents(totalRaw),
+        dateRaw: ofxTag(block, "DTTRADE") || ofxTag(block, "DTSETTLE"),
+        fitid: ofxTag(block, "FITID"),
+        secName: secId ? securities.get(secId) : undefined,
+      });
+    }
+  }
+
+  const sells: InvAgg[] = [];
+  for (const tag of INV_SELL_TAGS) {
+    for (const block of content.split(new RegExp(`<${tag}>`, "i")).slice(1)) {
+      const totalRaw = ofxTag(block, "TOTAL");
+      if (!totalRaw) continue;
+      const secId = ofxTag(block, "UNIQUEID");
+      sells.push({
+        tag,
+        memo: ofxTag(block, "MEMO") || tag,
+        totalCents: parseMoneyToCents(totalRaw),
+        dateRaw: ofxTag(block, "DTTRADE") || ofxTag(block, "DTSETTLE"),
+        fitid: ofxTag(block, "FITID"),
+        secName: secId ? securities.get(secId) : undefined,
+      });
+    }
+  }
+
+  // Prefer memo-labeled contributions/withdrawals. If the file has no cash STMTTRNs
+  // (typical Principal 401k), import contribution buys (or all non-exchange buys).
+  // When cash STMTTRNs exist, skip buys to avoid double-counting cash + purchase.
+  if (!hadCashTxns) {
+    const labeled = buys.filter((b) => isContributionMemo(b.memo));
+    const toImport =
+      labeled.length > 0 ? labeled : buys.filter((b) => !isExchangeMemo(b.memo));
+    for (const b of toImport) {
+      const label = isContributionMemo(b.memo) ? b.memo : "Contribution";
+      const payee = b.secName ? `${label} — ${b.secName}` : label;
+      pushOfxRow(rows, {
+        dateRaw: b.dateRaw,
+        amountCents: Math.abs(b.totalCents),
+        payee,
+        memo: b.memo,
+        fitid: b.fitid || undefined,
+      });
+    }
+  }
+
+  for (const s of sells) {
+    if (!isWithdrawalMemo(s.memo)) continue;
+    const payee = s.secName ? `${s.memo} — ${s.secName}` : s.memo;
+    pushOfxRow(rows, {
+      dateRaw: s.dateRaw,
+      amountCents: -Math.abs(s.totalCents),
+      payee,
+      memo: s.memo,
+      fitid: s.fitid || undefined,
+    });
+  }
+
   return rows;
 }
+
+
 
 export function parseTextStatement(content: string): ParsedRow[] {
   const rows: ParsedRow[] = [];

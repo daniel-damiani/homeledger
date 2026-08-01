@@ -1,5 +1,6 @@
 import { prisma } from "../db";
 import { matchCategoryId } from "../categorize";
+import { detachLoanMirrorsForTransactions, maybeAutoLinkLoan } from "../loan-link";
 import type { ParsedRow } from "./parsers";
 
 export async function commitImport(opts: {
@@ -19,12 +20,13 @@ export async function commitImport(opts: {
 
   let imported = 0;
   let skipped = 0;
+  let linked = 0;
   let balanceDelta = 0;
 
   for (const row of opts.rows) {
     const categoryId = await matchCategoryId(row.payee, row.memo);
     try {
-      await prisma.transaction.create({
+      const created = await prisma.transaction.create({
         data: {
           accountId: opts.accountId,
           date: row.date,
@@ -38,6 +40,8 @@ export async function commitImport(opts: {
       });
       imported += 1;
       balanceDelta += row.amountCents;
+      const link = await maybeAutoLinkLoan(created.id);
+      if (link) linked += 1;
     } catch {
       skipped += 1;
     }
@@ -48,10 +52,11 @@ export async function commitImport(opts: {
     data: { balanceCents: { increment: balanceDelta } },
   });
 
-  return prisma.importBatch.update({
+  const updated = await prisma.importBatch.update({
     where: { id: batch.id },
     data: { importedCount: imported, skippedCount: skipped },
   });
+  return { ...updated, linkedCount: linked };
 }
 
 export async function undoImportBatch(batchId: string) {
@@ -61,7 +66,13 @@ export async function undoImportBatch(batchId: string) {
   });
   if (!batch || batch.undone) return null;
 
-  const delta = batch.transactions.reduce((s, t) => s + t.amountCents, 0);
+  const txnIds = batch.transactions.map((t) => t.id);
+  await detachLoanMirrorsForTransactions(txnIds);
+
+  const remaining = await prisma.transaction.findMany({
+    where: { importBatchId: batchId },
+  });
+  const delta = remaining.reduce((s, t) => s + t.amountCents, 0);
 
   await prisma.$transaction([
     prisma.transaction.deleteMany({ where: { importBatchId: batchId } }),

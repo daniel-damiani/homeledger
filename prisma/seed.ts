@@ -18,6 +18,7 @@ const CATEGORIES: Array<{
   { name: "Utilities", group: "Housing", sortOrder: 21 },
   { name: "Transport", group: "Living", sortOrder: 30 },
   { name: "Gas", group: "Living", sortOrder: 31 },
+  { name: "Auto loan", group: "Living", sortOrder: 32 },
   { name: "Healthcare", group: "Living", sortOrder: 40 },
   { name: "Insurance", group: "Living", sortOrder: 41 },
   { name: "Subscriptions", group: "Lifestyle", sortOrder: 50 },

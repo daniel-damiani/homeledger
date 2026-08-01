@@ -12,7 +12,7 @@
     "db:migrate:dev": "prisma migrate dev",
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
-    "smoke:parsers": "node scripts/smoke-parsers.mjs",
+    "smoke:parsers": "node scripts/smoke-parsers.mjs && tsx scripts/smoke-ofx-invest.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

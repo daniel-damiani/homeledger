@@ -3,7 +3,7 @@
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 
-const TYPES = ["CHECKING", "SAVINGS", "CREDIT", "CASH", "INVESTMENT", "OTHER"] as const;
+const TYPES = ["CHECKING", "SAVINGS", "CREDIT", "LOAN", "CASH", "INVESTMENT", "OTHER"] as const;
 
 export function AccountForm() {
   const router = useRouter();
@@ -78,7 +78,7 @@ export function AccountForm() {
           disabled={busy}
         />
         <span className="stat muted">
-          Balance before any imports. Leave 0 if you&apos;ll import a full history.
+          Checking/savings: balance before imports. LOAN/CREDIT: amount currently owed.
         </span>
       </div>
       <button className="btn" type="submit" disabled={busy}>

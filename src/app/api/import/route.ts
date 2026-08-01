@@ -76,6 +76,10 @@ export async function POST(req: Request) {
     }
   } else if (format === "ofx") {
     rows = parseOfxContent(text);
+    if (rows.length === 0) {
+      warning =
+        "OFX/QFX parsed but no transactions found. Principal 401k files should include BUYMF/INVBANKTRAN activity — try a wider date range download.";
+    }
   } else if (format === "pdf") {
     rows = await parsePdfBuffer(buf);
     if (rows.length === 0) {
