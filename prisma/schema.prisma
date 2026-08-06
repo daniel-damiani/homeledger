@@ -36,6 +36,7 @@ model Account {
   currency     String        @default("USD")
   balanceCents Int           @default(0)
   archived     Boolean       @default(false)
+  downloadUrl  String?
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
   transactions Transaction[]

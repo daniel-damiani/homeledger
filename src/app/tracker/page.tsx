@@ -129,20 +129,57 @@ export default async function TrackerPage({
         </div>
       </section>
 
-      {/* ── Savings deposits ring ── */}
+      {/* ── Surplus breakdown ── */}
+      {snap.surplusCents !== 0 ? (() => {
+        const surplus = snap.surplusCents;
+        const savings = snap.savingsDepositCents;
+        const investments = snap.investmentNetCents;
+        const unallocated = surplus - savings - investments;
+        const absTotal = Math.abs(surplus) || 1;
+        const bars: { label: string; cents: number; color: string; detail?: string }[] = [
+          { label: "Net savings", cents: savings, color: "var(--amber)", detail: snap.bySavingsAccount.map(a => a.name).join(", ") || undefined },
+          { label: "Investments", cents: investments, color: "var(--accent)", detail: snap.byInvestmentAccount.map(a => a.name).join(", ") || undefined },
+          { label: "Unallocated", cents: unallocated, color: "var(--muted-bg, #444)" },
+        ].filter(b => b.cents !== 0);
+        return (
+          <section className="panel" style={{ marginTop: "1rem" }}>
+            <h2 style={{ marginTop: 0 }}>Surplus breakdown</h2>
+            <p className="stat muted" style={{ marginTop: 0 }}>Where the surplus went — savings, investments, and what stayed liquid.</p>
+            <div className="tracker-bars" style={{ maxWidth: "36rem" }}>
+              {bars.map(b => {
+                const pct = Math.round((Math.abs(b.cents) / absTotal) * 100);
+                const isNeg = b.cents < 0;
+                return (
+                  <div key={b.label} className="tracker-bar-row">
+                    <div className="tracker-bar-meta">
+                      <span>{b.label}{b.detail ? <span className="stat muted" style={{ marginLeft: "0.4rem", fontSize: "0.8em" }}>({b.detail})</span> : null}{isNeg ? " ↑ net outflow" : ""}</span>
+                      <span className="stat muted"><Money cents={b.cents} /> · {pct}%</span>
+                    </div>
+                    <div className="tracker-bar-track">
+                      <span style={{ width: `${pct}%`, background: isNeg ? "var(--error, #e55)" : b.color }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        );
+      })() : null}
+
+      {/* ── Net savings ring ── */}
       <section className="panel" style={{ marginTop: "1rem" }}>
         <div className="tracker-hero-main">
           <StatRing
             valueCents={snap.savingsDepositCents}
             goalCents={snap.isYtd ? snap.ytdGoalCents : snap.goalCents}
-            label="Savings deposits"
-            sublabel="into SAVINGS accounts"
-            colorClass="amber"
+            label="Net savings"
+            sublabel="across SAVINGS accounts"
+            colorClass={snap.savingsDepositCents >= 0 ? "amber" : "error"}
           />
           <div style={{ flex: 1, minWidth: 0 }}>
-            <h2 style={{ marginTop: 0 }}>Transferred into savings</h2>
+            <h2 style={{ marginTop: 0 }}>Net savings activity</h2>
             <p className="stat muted" style={{ marginTop: 0 }}>
-              Positive inflows across all SAVINGS-type accounts.
+              Deposits minus withdrawals across all SAVINGS-type accounts.
               {(snap.isYtd ? snap.ytdGoalCents : snap.goalCents) > 0
                 ? " Ring shows % of savings goal."
                 : " Set a monthly savings goal on Goals to show % here."}
@@ -150,27 +187,26 @@ export default async function TrackerPage({
             {snap.bySavingsAccount.length > 0 ? (
               <div className="tracker-bars" style={{ maxWidth: "32rem" }}>
                 {snap.bySavingsAccount.map((a) => {
-                  const pct =
-                    snap.savingsDepositCents > 0
-                      ? Math.round((a.cents / snap.savingsDepositCents) * 100)
-                      : 0;
+                  const totalAbs = Math.abs(snap.savingsDepositCents);
+                  const pct = totalAbs > 0 ? Math.round((Math.abs(a.cents) / totalAbs) * 100) : 0;
+                  const isNeg = a.cents < 0;
                   return (
                     <div key={a.name} className="tracker-bar-row">
                       <div className="tracker-bar-meta">
-                        <span>{a.name}</span>
+                        <span>{a.name}{isNeg ? " (net outflow)" : ""}</span>
                         <span className="stat muted">
                           <Money cents={a.cents} /> · {pct}%
                         </span>
                       </div>
                       <div className="tracker-bar-track">
-                        <span style={{ width: `${pct}%`, background: "var(--amber)" }} />
+                        <span style={{ width: `${pct}%`, background: isNeg ? "var(--error, #e55)" : "var(--amber)" }} />
                       </div>
                     </div>
                   );
                 })}
               </div>
             ) : (
-              <p className="stat muted">No deposits into SAVINGS accounts this period.</p>
+              <p className="stat muted">No activity in SAVINGS accounts this period.</p>
             )}
           </div>
         </div>

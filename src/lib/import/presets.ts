@@ -31,6 +31,10 @@ export function guessPreset(headers: string[]): string {
   const h = headers.map((x) => x.toLowerCase().trim()).filter(Boolean);
   const has = (name: string) => h.includes(name);
 
+  // Robinhood brokerage export
+  if (has("activity date") && has("trans code") && has("instrument")) {
+    return "robinhood";
+  }
   // Chase credit card export
   if (has("transaction date") && has("post date") && has("amount")) {
     return "chase-credit";

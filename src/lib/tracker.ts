@@ -20,9 +20,12 @@ export type TrackerSnapshot = {
   byAccount: NamedAmount[];
   byPayee: NamedAmount[];
   byIncomePayee: NamedAmount[];
-  /** Positive inflows into SAVINGS-type accounts. */
+  /** Net change in SAVINGS-type accounts (deposits minus withdrawals). */
   savingsDepositCents: number;
   bySavingsAccount: NamedAmount[];
+  /** Net Transfer-categorized cash into INVESTMENT-type accounts. */
+  investmentNetCents: number;
+  byInvestmentAccount: NamedAmount[];
   /** Daily cumulative surplus (month view) or monthly cumulative surplus (YTD view). */
   cumulative: { label: string; surplusCents: number }[];
   uncategorizedExpenseCents: number;
@@ -45,7 +48,7 @@ export function payeeGroupKey(payee: string): string {
   const tokens = s.split(/\s+/);
   const out: string[] = [];
   for (const tok of tokens) {
-    if (/^\d+$/.test(tok)) break;
+    if (/\d/.test(tok)) break;
     out.push(tok);
   }
   const result = out.join(" ").trim();
@@ -68,8 +71,20 @@ async function aggregate(start: Date, end: Date) {
     orderBy: [{ date: "asc" }, { createdAt: "asc" }],
   });
 
+  // Include both deposits and withdrawals so we show net savings change
   const savingsTxns = await prisma.transaction.findMany({
-    where: { date: { gte: start, lte: end }, amountCents: { gt: 0 }, account: { type: "SAVINGS" } },
+    where: { date: { gte: start, lte: end }, account: { type: "SAVINGS" } },
+    include: { account: true },
+  });
+
+  // Cash explicitly moved from liquid accounts into investments (ACH deposits to brokerage etc.).
+  // Only "Transfer" category — excludes 401k contributions which come from payroll, not surplus.
+  const investmentTxns = await prisma.transaction.findMany({
+    where: {
+      date: { gte: start, lte: end },
+      account: { type: "INVESTMENT" },
+      category: { isTransfer: true, name: "Transfer" },
+    },
     include: { account: true },
   });
 
@@ -77,15 +92,22 @@ async function aggregate(start: Date, end: Date) {
   let expenseCents = 0;
   let uncategorizedExpenseCents = 0;
   let savingsDepositCents = 0;
+  let investmentNetCents = 0;
   const byCategory = new Map<string, number>();
   const byAccount = new Map<string, number>();
   const byPayee = new Map<string, number>();
   const byIncomePayee = new Map<string, number>();
   const bySavingsAccountMap = new Map<string, number>();
+  const byInvestmentAccountMap = new Map<string, number>();
 
   for (const t of savingsTxns) {
     savingsDepositCents += t.amountCents;
     bySavingsAccountMap.set(t.account.name, (bySavingsAccountMap.get(t.account.name) ?? 0) + t.amountCents);
+  }
+
+  for (const t of investmentTxns) {
+    investmentNetCents += t.amountCents;
+    byInvestmentAccountMap.set(t.account.name, (byInvestmentAccountMap.get(t.account.name) ?? 0) + t.amountCents);
   }
 
   for (const t of txns) {
@@ -114,11 +136,13 @@ async function aggregate(start: Date, end: Date) {
     expenseCents,
     uncategorizedExpenseCents,
     savingsDepositCents,
+    investmentNetCents,
     byCategory: sortDesc(byCategory),
     byAccount: sortDesc(byAccount),
     byPayee: sortDesc(byPayee).slice(0, 12),
     byIncomePayee: sortDesc(byIncomePayee).slice(0, 12),
     bySavingsAccount: sortDesc(bySavingsAccountMap),
+    byInvestmentAccount: sortDesc(byInvestmentAccountMap),
     rawTxns: txns,
   };
 }
@@ -173,6 +197,8 @@ export async function getTrackerSnapshot(month = formatMonthKey()): Promise<Trac
     byIncomePayee: data.byIncomePayee,
     savingsDepositCents: data.savingsDepositCents,
     bySavingsAccount: data.bySavingsAccount,
+    investmentNetCents: data.investmentNetCents,
+    byInvestmentAccount: data.byInvestmentAccount,
     cumulative,
     uncategorizedExpenseCents: data.uncategorizedExpenseCents,
   };
@@ -195,11 +221,13 @@ export async function getTrackerYtdSnapshot(year: number, now = new Date()): Pro
   let totalExpense = 0;
   let totalUncategorized = 0;
   let totalSavings = 0;
+  let totalInvestment = 0;
   const byCategoryMap = new Map<string, number>();
   const byAccountMap = new Map<string, number>();
   const byPayeeMap = new Map<string, number>();
   const byIncomePayeeMap = new Map<string, number>();
   const bySavingsMap = new Map<string, number>();
+  const byInvestmentMap = new Map<string, number>();
   const cumulative: { label: string; surplusCents: number }[] = [];
   let running = 0;
 
@@ -210,11 +238,13 @@ export async function getTrackerYtdSnapshot(year: number, now = new Date()): Pro
     totalExpense += data.expenseCents;
     totalUncategorized += data.uncategorizedExpenseCents;
     totalSavings += data.savingsDepositCents;
+    totalInvestment += data.investmentNetCents;
     for (const { name, cents } of data.byCategory) byCategoryMap.set(name, (byCategoryMap.get(name) ?? 0) + cents);
     for (const { name, cents } of data.byAccount) byAccountMap.set(name, (byAccountMap.get(name) ?? 0) + cents);
     for (const { name, cents } of data.byPayee) byPayeeMap.set(name, (byPayeeMap.get(name) ?? 0) + cents);
     for (const { name, cents } of data.byIncomePayee) byIncomePayeeMap.set(name, (byIncomePayeeMap.get(name) ?? 0) + cents);
     for (const { name, cents } of data.bySavingsAccount) bySavingsMap.set(name, (bySavingsMap.get(name) ?? 0) + cents);
+    for (const { name, cents } of data.byInvestmentAccount) byInvestmentMap.set(name, (byInvestmentMap.get(name) ?? 0) + cents);
     running += data.incomeCents - data.expenseCents;
     const monthLabel = new Date(Date.UTC(year, mo, 1)).toLocaleString("default", { month: "short" });
     cumulative.push({ label: monthLabel, surplusCents: running });
@@ -246,6 +276,8 @@ export async function getTrackerYtdSnapshot(year: number, now = new Date()): Pro
     byIncomePayee: sortDesc(byIncomePayeeMap).slice(0, 12),
     savingsDepositCents: totalSavings,
     bySavingsAccount: sortDesc(bySavingsMap),
+    investmentNetCents: totalInvestment,
+    byInvestmentAccount: sortDesc(byInvestmentMap),
     cumulative,
     uncategorizedExpenseCents: totalUncategorized,
   };

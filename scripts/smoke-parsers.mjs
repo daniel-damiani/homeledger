@@ -11,7 +11,16 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..");
 
 function parseMoneyToCents(raw) {
-  const cleaned = String(raw).replace(/[^0-9.+\-]/g, "").trim();
+  const s = String(raw).trim();
+  // Parentheses notation: ($1.23) → -123
+  const paren = /^\((.+)\)$/.exec(s);
+  if (paren) {
+    const cleaned = paren[1].replace(/[^0-9.]/g, "").trim();
+    if (!cleaned) return 0;
+    return -Math.round(Number.parseFloat(cleaned) * 100);
+  }
+  // Regular notation: keep sign, strip currency symbols
+  const cleaned = s.replace(/[^0-9.+\-]/g, "").trim();
   if (!cleaned) return 0;
   return Math.round(Number.parseFloat(cleaned) * 100);
 }
@@ -33,23 +42,39 @@ function parseCsv(content, preset) {
     columns: true,
     skip_empty_lines: true,
     relax_column_count: true,
+    relax_quotes: true,
     trim: true,
   });
-  return records.map((rec) => {
-    let amountCents = 0;
-    if (preset.amountColumn) amountCents = parseMoneyToCents(rec[preset.amountColumn] || "0");
-    if (preset.debitColumn || preset.creditColumn) {
-      const debit = parseMoneyToCents(rec[preset.debitColumn] || "0");
-      const credit = parseMoneyToCents(rec[preset.creditColumn] || "0");
-      amountCents = credit - Math.abs(debit);
-    }
-    if (preset.invertAmount) amountCents = -amountCents;
-    return {
-      date: parseDateLoose(rec[preset.dateColumn]),
-      payee: rec[preset.payeeColumn],
-      amountCents,
-    };
-  });
+  return records
+    .filter((rec) => {
+      if (preset.transCodeColumn && preset.skipTransCodes?.length) {
+        const code = (rec[preset.transCodeColumn] || "").trim();
+        if (preset.skipTransCodes.includes(code)) return false;
+      }
+      if (preset.skipWhenDescriptionContains) {
+        const desc = (rec[preset.payeeColumn] || "").toLowerCase();
+        if (desc.includes(preset.skipWhenDescriptionContains.toLowerCase())) return false;
+      }
+      return true;
+    })
+    .map((rec) => {
+      let amountCents = 0;
+      if (preset.amountColumn) amountCents = parseMoneyToCents(rec[preset.amountColumn] || "0");
+      if (preset.debitColumn || preset.creditColumn) {
+        const debit = parseMoneyToCents(rec[preset.debitColumn] || "0");
+        const credit = parseMoneyToCents(rec[preset.creditColumn] || "0");
+        amountCents = credit - Math.abs(debit);
+      }
+      if (preset.invertAmount) amountCents = -amountCents;
+      const payeeRaw = (rec[preset.payeeColumn] || "").split(/\r?\n/)[0].trim();
+      const prefix = preset.payeePrefixColumn ? (rec[preset.payeePrefixColumn] || "").trim() : "";
+      const payee = prefix ? `${prefix} – ${payeeRaw}` : payeeRaw;
+      return {
+        date: parseDateLoose(rec[preset.dateColumn]),
+        payee,
+        amountCents,
+      };
+    });
 }
 
 function parseOfx(content) {
@@ -141,6 +166,20 @@ assert(citiRows.some((r) => r.amountCents < 0), "citi debits should be negative"
 assert(citiRows.some((r) => r.amountCents > 0), "citi credits should be positive");
 assert(!Number.isNaN(citiRows[0].date.getTime()), "citi MM-DD-YYYY dates should parse");
 
+const robinhood = fs.readFileSync(path.join(root, "fixtures/sample-robinhood.csv"), "utf8");
+const robinhoodPreset = JSON.parse(
+  fs.readFileSync(path.join(root, "presets/import/robinhood.json"), "utf8")
+);
+const robinhoodRows = parseCsv(robinhood, robinhoodPreset);
+// 11 data rows; 5 DRIP Buy rows skipped via description → 6 remaining (CDIV×3, ITRF, SLIP, ACH)
+assert(robinhoodRows.length === 6, `robinhood expected 6 rows (DRIP skipped), got ${robinhoodRows.length}`);
+assert(robinhoodRows.some((r) => r.amountCents > 0), "robinhood should have income");
+assert(robinhoodRows.some((r) => r.amountCents < 0), "robinhood should have outflow (ITRF transfer)");
+assert(
+  robinhoodRows.every((r) => !r.payee.includes("CUSIP")),
+  "robinhood payees should not contain CUSIP lines"
+);
+
 const hash = createHash("sha1").update("smoke").digest("hex");
 assert(hash.length === 40, "hash");
 
@@ -149,6 +188,7 @@ console.log("smoke:parsers OK", {
   chaseCredit: chaseCreditRows.length,
   citiSavings: citiRows.length,
   generic: genericRows.length,
+  robinhood: robinhoodRows.length,
   ofx: ofxRows.length,
   txt: txtRows.length,
 });

@@ -24,6 +24,33 @@ export async function commitImport(opts: {
   let balanceDelta = 0;
 
   for (const row of opts.rows) {
+    // Secondary dedup: catch cross-format duplicates (e.g. OFX re-import after CSV).
+    // OFX often truncates payee names vs CSV (e.g. "COSTCO WHSE ST GEORGE" vs
+    // "COSTCO WHSE ST GEORGE UT"), so we fetch same-day same-amount candidates and
+    // use a prefix match: if one payee is a prefix of the other (≥10 chars), treat as dupe.
+    // SKIP this check when the row has a real bank FITID — the bank guarantees FITID
+    // uniqueness, so two different transactions can legitimately share date/amount/payee.
+    if (!row.realId) {
+      const dayStart = new Date(
+        Date.UTC(row.date.getUTCFullYear(), row.date.getUTCMonth(), row.date.getUTCDate())
+      );
+      const dayEnd = new Date(dayStart.getTime() + 86_400_000);
+      const candidates = await prisma.transaction.findMany({
+        where: { accountId: opts.accountId, amountCents: row.amountCents, date: { gte: dayStart, lt: dayEnd } },
+        select: { payee: true },
+      });
+      const isDupe = candidates.some((c) => {
+        if (c.payee === row.payee) return true;
+        const shorter = c.payee.length <= row.payee.length ? c.payee : row.payee;
+        const longer  = c.payee.length <= row.payee.length ? row.payee : c.payee;
+        return shorter.length >= 10 && longer.startsWith(shorter);
+      });
+      if (isDupe) {
+        skipped += 1;
+        continue;
+      }
+    }
+
     const categoryId = await matchCategoryId(row.payee, row.memo);
     try {
       const created = await prisma.transaction.create({

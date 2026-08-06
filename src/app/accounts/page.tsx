@@ -2,6 +2,7 @@ import Link from "next/link";
 import { AppNav } from "@/components/AppNav";
 import { Money } from "@/components/Money";
 import { AccountForm } from "@/components/AccountForm";
+import { AccountDownloadLink } from "@/components/AccountDownloadLink";
 import { DeleteAccountButton } from "@/components/DeleteAccountButton";
 import { ManualTxnForm } from "@/components/ManualTxnForm";
 import { RecurringPaymentsPanel } from "@/components/RecurringPaymentsPanel";
@@ -50,6 +51,7 @@ export default async function AccountsPage() {
               {a.type}
               {a.institution ? ` · ${a.institution}` : ""}
             </p>
+            <AccountDownloadLink accountId={a.id} initialUrl={a.downloadUrl ?? null} />
           </section>
         ))}
       </div>

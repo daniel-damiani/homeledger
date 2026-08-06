@@ -1,0 +1,12 @@
+{
+  "name": "Robinhood",
+  "dateColumn": "Activity Date",
+  "payeeColumn": "Description",
+  "payeePrefixColumn": "Instrument",
+  "amountColumn": "Amount",
+  "memoColumn": "Trans Code",
+  "transCodeColumn": "Trans Code",
+  "skipTransCodes": ["Buy", "Sell", "MRGS", "SDIV", "SOFF", "SPL", "REC", "SXCH", "SPR"],
+  "invertAmount": false,
+  "notes": "Tracks net cash flowing in/out of the account. Skips Buy and Sell (share trades stay within Robinhood and are not cash events relative to your bank) and zero-amount share events. To match Robinhood's displayed portfolio value, set the account opening balance to: (Robinhood balance) minus (sum of imported transactions). Imported types: ACH deposits, CDIV dividends, SLIP stock-lending, ITRF transfers, DTAX/DFEE/AFEE fees, MRGC/LIQ/ROC/MISC/CIL cash."
+}

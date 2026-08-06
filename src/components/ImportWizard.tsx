@@ -29,6 +29,7 @@ const DEFAULT_PRESETS = [
   "amex",
   "capital-one",
   "bank-of-america",
+  "robinhood",
 ];
 
 export function ImportWizard({

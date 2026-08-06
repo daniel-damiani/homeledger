@@ -1,6 +1,24 @@
 import { NextResponse } from "next/server";
 import { isAuthenticated } from "@/lib/auth";
 import { deleteAccount } from "@/lib/accounts";
+import { prisma } from "@/lib/db";
+
+export async function PATCH(
+  req: Request,
+  ctx: { params: Promise<{ id: string }> }
+) {
+  if (!(await isAuthenticated())) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const { id } = await ctx.params;
+  const body = await req.json().catch(() => ({}));
+  const { downloadUrl } = body as { downloadUrl?: string | null };
+  const account = await prisma.account.update({
+    where: { id },
+    data: { downloadUrl: downloadUrl ?? null },
+  });
+  return NextResponse.json({ ok: true, downloadUrl: account.downloadUrl });
+}
 
 export async function DELETE(
   _req: Request,

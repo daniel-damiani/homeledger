@@ -8,16 +8,26 @@ export type ParsedRow = {
   memo?: string;
   amountCents: number;
   externalId: string;
+  /** True when externalId came from the bank's own FITID — bank guarantees uniqueness, so skip content-based dedup. */
+  realId: boolean;
 };
 
 export type ImportPreset = {
   name: string;
   dateColumn: string;
   payeeColumn: string;
+  /** Optional column prepended to payee (e.g. ticker symbol column). */
+  payeePrefixColumn?: string;
   amountColumn?: string;
   debitColumn?: string;
   creditColumn?: string;
   memoColumn?: string;
+  /** Column that holds a transaction type/code used for filtering. */
+  transCodeColumn?: string;
+  /** Trans code values that should be skipped entirely (e.g. zero-amount share events). */
+  skipTransCodes?: string[];
+  /** Skip a row if its full (multi-line) description contains this string (case-insensitive). */
+  skipWhenDescriptionContains?: string;
   /** If true, flip CSV amounts so expenses become negative */
   invertAmount?: boolean;
   dateFormat?: string;
@@ -266,9 +276,28 @@ export function parseCsvContent(
 
   const rows: ParsedRow[] = [];
   for (const rec of records) {
+    // Skip rows whose trans code is in the exclusion list (e.g. zero-amount share events)
+    if (preset.transCodeColumn && preset.skipTransCodes?.length) {
+      const code = pickColumn(rec, preset.transCodeColumn).trim();
+      if (preset.skipTransCodes.includes(code)) continue;
+    }
+
+    // Skip rows where the full (multi-line) description contains a marker string (e.g. DRIP buys)
+    if (preset.skipWhenDescriptionContains) {
+      const fullDesc = pickColumn(rec, preset.payeeColumn);
+      if (fullDesc.toLowerCase().includes(preset.skipWhenDescriptionContains.toLowerCase())) continue;
+    }
+
     const dateRaw = pickColumn(rec, preset.dateColumn);
-    const payeeRaw = pickColumn(rec, preset.payeeColumn);
-    const payee = (payeeRaw || "Unknown").trim() || "Unknown";
+
+    // Multi-line payee cells (e.g. Robinhood descriptions with embedded CUSIP lines):
+    // use only the first non-empty line as the display name.
+    const payeeRaw = pickColumn(rec, preset.payeeColumn).split(/\r?\n/)[0].trim();
+    const prefixRaw = preset.payeePrefixColumn
+      ? pickColumn(rec, preset.payeePrefixColumn).trim()
+      : "";
+    const payee = (prefixRaw ? `${prefixRaw} – ${payeeRaw}` : payeeRaw || "Unknown").trim() || "Unknown";
+
     const memoRaw = pickColumn(rec, preset.memoColumn);
     const memo = memoRaw || undefined;
 
@@ -292,7 +321,7 @@ export function parseCsvContent(
       memo ?? "",
     ]);
 
-    rows.push({ date: safeDate, payee, memo, amountCents, externalId });
+    rows.push({ date: safeDate, payee, memo, amountCents, externalId, realId: false });
   }
   return rows;
 }
@@ -329,6 +358,7 @@ function pushOfxRow(
   const date = parseDateLoose(opts.dateRaw);
   const safeDate = Number.isNaN(date.getTime()) ? new Date() : date;
   const payee = opts.payee.trim() || "OFX transaction";
+  const hasFitid = Boolean(opts.fitid);
   const externalId =
     opts.fitid ||
     rowExternalId([
@@ -343,6 +373,7 @@ function pushOfxRow(
     memo: opts.memo,
     amountCents: opts.amountCents,
     externalId,
+    realId: hasFitid,
   });
 }
 
@@ -517,6 +548,7 @@ export function parseTextStatement(content: string): ParsedRow[] {
         payee,
         String(amountCents),
       ]),
+      realId: false,
     });
   }
   return rows;
