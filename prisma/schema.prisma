@@ -15,6 +15,8 @@ model AppSettings {
   onboarded               Boolean  @default(false)
   /** Target surplus (income − non-transfer spending) to hit each calendar month. */
   monthlySavingsGoalCents Int      @default(0)
+  /** Claimed SimpleFIN Access URL (includes Basic Auth credentials). Null until claimed. */
+  simpleFinAccessUrl      String?
   updatedAt               DateTime @updatedAt
 }
 
@@ -37,6 +39,12 @@ model Account {
   balanceCents Int           @default(0)
   archived     Boolean       @default(false)
   downloadUrl  String?
+  /** SimpleFIN Bridge account ID — links this account to a live bank connection. */
+  simpleFinId              String?   @unique
+  /** Last successful SimpleFIN sync; used as start-date on next fetch. */
+  simpleFinLastSyncAt      DateTime?
+  /** Available balance as reported by SimpleFIN (may differ from posted balance). */
+  availableBalanceCents    Int?
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
   transactions Transaction[]

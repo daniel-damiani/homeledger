@@ -63,6 +63,7 @@ export async function commitImport(opts: {
           categoryId,
           externalId: row.externalId,
           importBatchId: batch.id,
+          pending: row.pending ?? false,
         },
       });
       imported += 1;

@@ -3,15 +3,15 @@ import { ChatDrawer } from "@/components/ChatDrawer";
 
 const LINKS = [
   { href: "/", label: "Home" },
-  { href: "/import", label: "Import" },
+  { href: "/simplefin", label: "SimpleFIN" },
   { href: "/accounts", label: "Accounts" },
   { href: "/transactions", label: "Transactions" },
-  { href: "/spending", label: "Spending" },
   { href: "/tracker", label: "Tracker" },
   { href: "/budgets", label: "Budgets" },
   { href: "/goals", label: "Goals" },
   { href: "/categorize", label: "Categorize" },
   { href: "/categories", label: "Categories" },
+  { href: "/import", label: "Manual Import" },
   { href: "/settings", label: "Settings" },
 ];
 

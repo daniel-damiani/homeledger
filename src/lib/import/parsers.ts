@@ -10,6 +10,8 @@ export type ParsedRow = {
   externalId: string;
   /** True when externalId came from the bank's own FITID — bank guarantees uniqueness, so skip content-based dedup. */
   realId: boolean;
+  /** Whether this transaction is still pending (not yet posted). */
+  pending?: boolean;
 };
 
 export type ImportPreset = {

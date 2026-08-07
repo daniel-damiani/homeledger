@@ -1,6 +1,10 @@
 import { AppNav } from "@/components/AppNav";
 import { ImportWizard } from "@/components/ImportWizard";
+import { AccountForm } from "@/components/AccountForm";
+import { ManualTxnForm } from "@/components/ManualTxnForm";
+import { RecurringPaymentsPanel } from "@/components/RecurringPaymentsPanel";
 import { listAccounts } from "@/lib/accounts";
+import { listRecurringPayments } from "@/lib/recurring";
 import { prisma } from "@/lib/db";
 import { UndoBatchButton } from "@/components/UndoBatchButton";
 import { ResetAccountImportsButton } from "@/components/ResetAccountImportsButton";
@@ -17,6 +21,9 @@ export default async function ImportPage({
   const { account: filterAccountId = "" } = await searchParams;
 
   const accounts = await listAccounts();
+  const active = accounts.filter((a) => !a.archived);
+  const categories = await prisma.category.findMany({ orderBy: { sortOrder: "asc" } });
+  const recurring = await listRecurringPayments();
 
   const batches = await prisma.importBatch.findMany({
     where: filterAccountId ? { accountId: filterAccountId } : undefined,
@@ -24,7 +31,6 @@ export default async function ImportPage({
     include: { account: true },
   });
 
-  // Count transactions per account for the reset panel
   const txnCounts = await prisma.transaction.groupBy({
     by: ["accountId"],
     _count: { id: true },
@@ -35,9 +41,53 @@ export default async function ImportPage({
   return (
     <main className="shell">
       <AppNav pathname="/import" />
-      <h1>Import</h1>
+      <h1>Manual Import</h1>
+
+      {/* ── File import ──────────────────────────────────────────────── */}
       <ImportWizard accounts={accountOptions} />
 
+      {/* ── Manual entry ─────────────────────────────────────────────── */}
+      <div
+        className="grid"
+        style={{ gridTemplateColumns: "1fr 1fr", gap: "1rem", marginTop: "1rem", marginBottom: "1rem" }}
+      >
+        <AccountForm />
+        {active[0] ? (
+          <ManualTxnForm
+            accounts={active.map((a) => ({ id: a.id, name: a.name, type: a.type }))}
+            categories={categories}
+            defaultAccountId={active[0].id}
+          />
+        ) : (
+          <section className="panel">
+            <p>Create an account first to add manual transactions.</p>
+          </section>
+        )}
+      </div>
+
+      {/* ── Recurring autopay ────────────────────────────────────────── */}
+      {active.length > 0 && (
+        <div style={{ marginBottom: "1rem" }}>
+          <RecurringPaymentsPanel
+            accounts={active.map((a) => ({ id: a.id, name: a.name, type: a.type }))}
+            categories={categories}
+            initial={recurring.map((r) => ({
+              id: r.id,
+              name: r.name,
+              payee: r.payee,
+              amountCents: r.amountCents,
+              dayOfMonth: r.dayOfMonth,
+              active: r.active,
+              lastPostedOn: r.lastPostedOn?.toISOString() ?? null,
+              fromAccount: { id: r.fromAccount.id, name: r.fromAccount.name },
+              toAccount: r.toAccount ? { id: r.toAccount.id, name: r.toAccount.name } : null,
+              category: r.category ? { id: r.category.id, name: r.category.name } : null,
+            }))}
+          />
+        </div>
+      )}
+
+      {/* ── Import history ───────────────────────────────────────────── */}
       <section className="panel" style={{ marginTop: "1rem" }}>
         <h2>Import batches</h2>
         <Suspense>
@@ -69,13 +119,13 @@ export default async function ImportPage({
                   <td>{!b.undone ? <UndoBatchButton batchId={b.id} /> : null}</td>
                 </tr>
               ))}
-              {batches.length === 0 ? (
+              {batches.length === 0 && (
                 <tr>
                   <td colSpan={6}>
-                    {filterAccountId ? "No batches for this account." : "No imports yet. Try fixtures/sample-chase.csv"}
+                    {filterAccountId ? "No batches for this account." : "No imports yet."}
                   </td>
                 </tr>
-              ) : null}
+              )}
             </tbody>
           </table>
         </div>
@@ -87,6 +137,7 @@ export default async function ImportPage({
         )}
       </section>
 
+      {/* ── Reset account ────────────────────────────────────────────── */}
       <section className="panel" style={{ marginTop: "1rem" }}>
         <h2>Reset account</h2>
         <p className="tip">

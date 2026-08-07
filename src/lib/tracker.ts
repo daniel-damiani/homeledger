@@ -1,5 +1,5 @@
 import { prisma } from "./db";
-import { clamp, formatMonthKey, monthBounds } from "./money";
+import { clamp, formatMonthKey, monthBounds, formatMoney } from "./money";
 
 export type NamedAmount = { name: string; cents: number };
 
@@ -281,4 +281,190 @@ export async function getTrackerYtdSnapshot(year: number, now = new Date()): Pro
     cumulative,
     uncategorizedExpenseCents: totalUncategorized,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Week in Review
+// ---------------------------------------------------------------------------
+
+export type WeekDayData = {
+  day: string;       // "Mon", "Tue", …
+  date: string;      // "2026-08-03"
+  spentCents: number;
+  incomeCents: number;
+  txnCount: number;
+  topCategory: string;
+};
+
+export type WeekData = {
+  weekStart: string;  // ISO date of Monday
+  weekEnd: string;    // ISO date of Sunday
+  spentCents: number;
+  incomeCents: number;
+  surplusCents: number;
+  txnCount: number;
+  byDay: WeekDayData[];
+  byCategory: NamedAmount[];
+  topTxns: { payee: string; amountCents: number; category: string; date: string }[];
+};
+
+export type WeekSnapshot = {
+  current: WeekData;
+  previous: WeekData;
+  narrative: string;
+};
+
+/** Snap any date back to its Monday (UTC). */
+export function toWeekMonday(date: Date): Date {
+  const d = new Date(date);
+  const dow = d.getUTCDay(); // 0 = Sun
+  const diff = dow === 0 ? -6 : 1 - dow;
+  d.setUTCDate(d.getUTCDate() + diff);
+  d.setUTCHours(0, 0, 0, 0);
+  return d;
+}
+
+const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+async function aggregateWeek(monday: Date): Promise<WeekData> {
+  const sunday = new Date(monday);
+  sunday.setUTCDate(monday.getUTCDate() + 6);
+  sunday.setUTCHours(23, 59, 59, 999);
+
+  const txns = await prisma.transaction.findMany({
+    where: { date: { gte: monday, lte: sunday } },
+    include: { category: true },
+    orderBy: { amountCents: "asc" }, // most negative first for topTxns
+  });
+
+  let spentCents = 0;
+  let incomeCents = 0;
+  const byCategoryMap = new Map<string, number>();
+  const byDaySpent = new Array(7).fill(0) as number[];
+  const byDayIncome = new Array(7).fill(0) as number[];
+  const byDayCount = new Array(7).fill(0) as number[];
+  const byDayCat = new Array(7).fill("") as string[];
+  const byDayCatMax = new Array(7).fill(0) as number[];
+
+  for (const t of txns) {
+    if (isTransferCat(t.category)) continue;
+    const dow = t.date.getUTCDay(); // 0=Sun
+    const dayIdx = dow === 0 ? 6 : dow - 1; // Mon=0 … Sun=6
+
+    if (t.amountCents < 0) {
+      const spent = Math.abs(t.amountCents);
+      spentCents += spent;
+      byDaySpent[dayIdx] += spent;
+      byDayCount[dayIdx] += 1;
+      const cat = t.category?.name ?? "Uncategorized";
+      byCategoryMap.set(cat, (byCategoryMap.get(cat) ?? 0) + spent);
+      if (spent > byDayCatMax[dayIdx]) {
+        byDayCatMax[dayIdx] = spent;
+        byDayCat[dayIdx] = cat;
+      }
+    } else if (t.amountCents > 0) {
+      incomeCents += t.amountCents;
+      byDayIncome[dayIdx] += t.amountCents;
+    }
+  }
+
+  const byDay: WeekDayData[] = DAY_NAMES.map((day, i) => {
+    const d = new Date(monday);
+    d.setUTCDate(monday.getUTCDate() + i);
+    return {
+      day,
+      date: d.toISOString().slice(0, 10),
+      spentCents: byDaySpent[i],
+      incomeCents: byDayIncome[i],
+      txnCount: byDayCount[i],
+      topCategory: byDayCat[i],
+    };
+  });
+
+  const sortDesc = (map: Map<string, number>): NamedAmount[] =>
+    [...map.entries()].map(([name, cents]) => ({ name, cents })).sort((a, b) => b.cents - a.cents);
+
+  // Top 5 expense transactions (most negative = largest spend)
+  const topTxns = txns
+    .filter((t) => t.amountCents < 0 && !isTransferCat(t.category))
+    .slice(0, 5)
+    .map((t) => ({
+      payee: t.payee,
+      amountCents: t.amountCents,
+      category: t.category?.name ?? "Uncategorized",
+      date: t.date.toISOString().slice(0, 10),
+    }));
+
+  return {
+    weekStart: monday.toISOString().slice(0, 10),
+    weekEnd: sunday.toISOString().slice(0, 10),
+    spentCents,
+    incomeCents,
+    surplusCents: incomeCents - spentCents,
+    txnCount: txns.filter((t) => !isTransferCat(t.category)).length,
+    byDay,
+    byCategory: sortDesc(byCategoryMap),
+    topTxns,
+  };
+}
+
+export function buildNarrative(current: WeekData, previous: WeekData): string {
+  const prevSpent = previous.spentCents;
+  const currSpent = current.spentCents;
+
+  if (currSpent === 0 && prevSpent === 0) {
+    return current.incomeCents > 0
+      ? `Income of ${formatMoney(current.incomeCents)} with no spending — great week.`
+      : "No transactions recorded this week yet.";
+  }
+
+  const lines: string[] = [];
+
+  if (prevSpent > 0) {
+    const deltaPct = Math.round(((currSpent - prevSpent) / prevSpent) * 100);
+    if (deltaPct <= -20) {
+      lines.push(`Quiet week — you spent ${Math.abs(deltaPct)}% less than last week.`);
+    } else if (deltaPct >= 20) {
+      lines.push(`Heavier week — spending up ${deltaPct}% vs last week.`);
+    } else {
+      lines.push(`Spending is roughly on par with last week.`);
+    }
+
+    // Find the biggest category spike vs last week
+    const prevCatMap = new Map(previous.byCategory.map((c) => [c.name, c.cents]));
+    let biggestSpike = { name: "", pct: 0 };
+    for (const cat of current.byCategory) {
+      const prev = prevCatMap.get(cat.name) ?? 0;
+      if (prev > 0 && cat.cents > 0) {
+        const pct = Math.round(((cat.cents - prev) / prev) * 100);
+        if (pct > biggestSpike.pct) biggestSpike = { name: cat.name, pct };
+      }
+    }
+    if (biggestSpike.pct >= 40) {
+      lines.push(`Watch out — ${biggestSpike.name} is up ${biggestSpike.pct}% this week.`);
+    }
+  } else if (currSpent > 0) {
+    lines.push(`${formatMoney(currSpent)} spent this week.`);
+  }
+
+  if (current.surplusCents > 0) {
+    lines.push(`Strong surplus of ${formatMoney(current.surplusCents)} this week.`);
+  } else if (current.surplusCents < 0) {
+    lines.push(`Spending exceeded income by ${formatMoney(Math.abs(current.surplusCents))} this week.`);
+  }
+
+  return lines.join(" ") || "Here's your week at a glance.";
+}
+
+export async function getWeekSnapshot(weekDate: Date): Promise<WeekSnapshot> {
+  const monday = toWeekMonday(weekDate);
+  const prevMonday = new Date(monday);
+  prevMonday.setUTCDate(monday.getUTCDate() - 7);
+
+  const [current, previous] = await Promise.all([
+    aggregateWeek(monday),
+    aggregateWeek(prevMonday),
+  ]);
+
+  return { current, previous, narrative: buildNarrative(current, previous) };
 }
