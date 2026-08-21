@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { isAuthenticated } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { formatMonthKey } from "@/lib/money";
+import { formatMonthKey, shiftMonthKey } from "@/lib/money";
 
 export async function POST(req: Request) {
   if (!(await isAuthenticated())) {
@@ -9,8 +9,7 @@ export async function POST(req: Request) {
   }
   const body = await req.json();
   const month = String(body.month || formatMonthKey());
-  const [y, m] = month.split("-").map(Number);
-  const prev = formatMonthKey(new Date(Date.UTC(y, m - 2, 1)));
+  const prev = shiftMonthKey(month, -1);
   const prevBudgets = await prisma.budget.findMany({ where: { month: prev } });
   let copied = 0;
   for (const b of prevBudgets) {

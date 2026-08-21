@@ -91,6 +91,13 @@ export function formatMonthKey(date = new Date()): string {
   return `${y}-${m}`;
 }
 
+/** Shift a YYYY-MM key by `delta` calendar months (UTC, no local TZ drift). */
+export function shiftMonthKey(monthKey: string, delta: number): string {
+  const [y, m] = monthKey.split("-").map(Number);
+  const d = new Date(Date.UTC(y, (m || 1) - 1 + delta, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
 export function monthBounds(month: string): { start: Date; end: Date } {
   const [y, m] = month.split("-").map(Number);
   const start = new Date(Date.UTC(y, m - 1, 1, 0, 0, 0));

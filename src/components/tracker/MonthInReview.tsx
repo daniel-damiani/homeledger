@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { formatMoney, formatMonthKey, monthBounds } from "@/lib/money";
+import { formatMoney, formatMonthKey, monthBounds, shiftMonthKey } from "@/lib/money";
 import { MonthDayBars } from "./MonthDayBars";
 import { MonthComparisonTable } from "./MonthComparisonTable";
 import { useTxnDrilldown } from "./TxnDrilldown";
@@ -25,13 +25,11 @@ function monthLabel(monthKey: string): string {
 }
 
 function prevMonth(monthKey: string): string {
-  const [y, m] = monthKey.split("-").map(Number);
-  return formatMonthKey(new Date(Date.UTC(y, m - 2, 1)));
+  return shiftMonthKey(monthKey, -1);
 }
 
 function nextMonth(monthKey: string): string {
-  const [y, m] = monthKey.split("-").map(Number);
-  return formatMonthKey(new Date(Date.UTC(y, m, 1)));
+  return shiftMonthKey(monthKey, 1);
 }
 
 function deltaPct(curr: number, prev: number): number | null {

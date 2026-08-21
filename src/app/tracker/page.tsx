@@ -10,7 +10,7 @@ import { WeekInReview } from "@/components/tracker/WeekInReview";
 import { MonthInReview } from "@/components/tracker/MonthInReview";
 import { TxnDrilldownProvider } from "@/components/tracker/TxnDrilldown";
 import { ensureSettings } from "@/lib/auth";
-import { formatMonthKey, monthBounds } from "@/lib/money";
+import { formatMonthKey, monthBounds, shiftMonthKey } from "@/lib/money";
 import { getTrackerSnapshot, getTrackerYtdSnapshot } from "@/lib/tracker";
 
 export const dynamic = "force-dynamic";
@@ -32,7 +32,7 @@ export default async function TrackerPage({
 
   const currentMonth = formatMonthKey(now);
   const month = sp.month && /^\d{4}-\d{2}$/.test(sp.month) ? sp.month : currentMonth;
-  const [y, m] = month.split("-").map(Number);
+  const [y] = month.split("-").map(Number);
 
   const snap = isWeek || isReview
     ? null
@@ -40,10 +40,8 @@ export default async function TrackerPage({
     ? await getTrackerYtdSnapshot(y, now)
     : await getTrackerSnapshot(month);
 
-  const prev = new Date(Date.UTC(y, m - 2, 1));
-  const next = new Date(Date.UTC(y, m, 1));
-  const prevKey = formatMonthKey(prev);
-  const nextKey = formatMonthKey(next);
+  const prevKey = shiftMonthKey(month, -1);
+  const nextKey = shiftMonthKey(month, 1);
   const prevYear = y - 1;
   const nextYear = y + 1;
 

@@ -1,5 +1,5 @@
 import { prisma } from "./db";
-import { clamp, formatMonthKey, monthBounds, formatMoney } from "./money";
+import { clamp, formatMonthKey, monthBounds, formatMoney, shiftMonthKey } from "./money";
 
 export type NamedAmount = { name: string; cents: number };
 
@@ -758,8 +758,7 @@ async function compute3MonthAverage(currentMonthKey: string): Promise<MonthAvg> 
 }
 
 export async function getMonthReviewSnapshot(monthKey: string): Promise<MonthReviewSnapshot> {
-  const [year, month] = monthKey.split("-").map(Number);
-  const prevMonthKey = formatMonthKey(new Date(Date.UTC(year, month - 2, 1)));
+  const prevMonthKey = shiftMonthKey(monthKey, -1);
 
   const [current, previous, avg3] = await Promise.all([
     aggregateMonthForReview(monthKey),

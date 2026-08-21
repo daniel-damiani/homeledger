@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
 import { isAuthenticated } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { dollarsToCents, formatMonthKey } from "@/lib/money";
+import { dollarsToCents, shiftMonthKey } from "@/lib/money";
 
 function monthsThroughYearEnd(startMonth: string): string[] {
   const [y, m] = startMonth.split("-").map(Number);
   if (!y || !m) return [startMonth];
   const out: string[] = [];
-  for (let month = m; month <= 12; month++) {
-    out.push(formatMonthKey(new Date(Date.UTC(y, month - 1, 1))));
+  for (let i = 0; m + i <= 12; i++) {
+    out.push(shiftMonthKey(startMonth, i));
   }
   return out;
 }
