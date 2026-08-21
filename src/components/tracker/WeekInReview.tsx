@@ -224,17 +224,25 @@ export function WeekInReview() {
                 }
                 color={snap.current.spentCents > snap.previous.spentCents && snap.previous.spentCents > 0 ? "neg" : undefined}
               />
-              <div className="week-stat-badge-wrap">
+              <div className="week-stat-badge-wrap" style={{ flexDirection: "column", gap: "0.3rem", alignItems: "flex-start" }}>
                 <DeltaBadge curr={snap.current.spentCents} prev={snap.previous.spentCents} />
+                {snap.avg13.spentCents > 0 && (
+                  <span className="week-avg-badge" title={`vs ${snap.avg13.weeksIncluded}-week average`}>
+                    <DeltaBadge curr={snap.current.spentCents} prev={snap.avg13.spentCents} />
+                    <span className="week-avg-label">{snap.avg13.weeksIncluded}‑wk avg</span>
+                  </span>
+                )}
               </div>
               <StatChip
                 label="Income"
                 value={formatMoney(snap.current.incomeCents)}
+                sub={snap.avg13.incomeCents > 0 ? `avg ${formatMoney(snap.avg13.incomeCents)}/wk` : undefined}
                 color={snap.current.incomeCents > 0 ? "pos" : "muted"}
               />
               <StatChip
                 label="Surplus"
                 value={formatMoney(snap.current.surplusCents)}
+                sub={snap.avg13.surplusCents !== 0 ? `avg ${formatMoney(snap.avg13.surplusCents)}/wk` : undefined}
                 color={snap.current.surplusCents >= 0 ? "pos" : "neg"}
               />
               <StatChip
@@ -250,14 +258,25 @@ export function WeekInReview() {
             <h3 className="week-section-title">Day by day</h3>
             <p className="week-section-sub">
               Color shows intensity — green is below average, amber is elevated, red is a spike day.
+              Click a day to see its transactions.
             </p>
             <DayBars days={snap.current.byDay} todayDate={todayDate} />
           </section>
 
-          {/* This week vs last week */}
+          {/* This week vs last week vs 13-week average */}
           <section className="panel week-section">
-            <h3 className="week-section-title">This week vs last week</h3>
-            <WeekComparisonTable current={snap.current} previous={snap.previous} />
+            <h3 className="week-section-title">
+              This week vs last week
+              {snap.avg13.weeksIncluded > 1 && (
+                <span className="week-avg-label" style={{ marginLeft: "0.5rem" }}>
+                  & {snap.avg13.weeksIncluded}-week average
+                </span>
+              )}
+            </h3>
+            <p className="week-section-sub">
+              Click a category or amount to see those transactions. Last-week amounts open last week&apos;s list.
+            </p>
+            <WeekComparisonTable current={snap.current} previous={snap.previous} avg13={snap.avg13} />
           </section>
 
           {/* Biggest transactions */}

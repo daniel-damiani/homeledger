@@ -61,6 +61,20 @@ export default async function SimpleFINPage() {
           Transactions travel directly from your bank → SimpleFIN → this app running locally.
           No financial data is stored or processed by any third party beyond SimpleFIN itself.
         </p>
+        <h3 style={{ marginTop: "1rem" }}>Rate limits</h3>
+        <p style={{ fontSize: "0.9rem", lineHeight: 1.6, margin: "0 0 0.5rem" }}>
+          SimpleFIN allows <strong>24 requests per day</strong> per Access URL. Each incremental
+          sync uses <strong>1 request</strong> per account. Historical syncs ({">"} 85 days) use
+          multiple requests — one per 85-day window.
+        </p>
+        <p style={{ fontSize: "0.9rem", lineHeight: 1.6, margin: 0 }}>
+          To see your actual usage and quota,{" "}
+          <a href="https://bridge.simplefin.org/auth/login" target="_blank" rel="noopener noreferrer">
+            sign in to SimpleFIN Bridge
+          </a>{" "}
+          — your dashboard shows recent request counts and any errors per bank connection.
+          If you&apos;ve hit the limit, wait a few hours; quotas replenish throughout the day.
+        </p>
       </section>
     </main>
   );

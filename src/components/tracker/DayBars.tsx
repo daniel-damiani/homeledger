@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { formatMoney } from "@/lib/money";
 import type { WeekDayData } from "@/lib/tracker";
+import { useTxnDrilldown } from "./TxnDrilldown";
 
 interface Props {
   days: WeekDayData[];
@@ -11,6 +12,7 @@ interface Props {
 
 export function DayBars({ days, todayDate }: Props) {
   const [hovered, setHovered] = useState<number | null>(null);
+  const { open } = useTxnDrilldown();
 
   const maxSpent = Math.max(...days.map((d) => d.spentCents), 1);
   const totalSpent = days.reduce((s, d) => s + d.spentCents, 0);
@@ -46,7 +48,26 @@ export function DayBars({ days, todayDate }: Props) {
             onFocus={() => setHovered(i)}
             onBlur={() => setHovered(null)}
             tabIndex={0}
-            aria-label={`${day.day}: ${formatMoney(day.spentCents)} spent`}
+            aria-label={`${day.day}: ${formatMoney(day.spentCents)} spent. Click to see transactions.`}
+            onClick={() =>
+              open({
+                from: day.date,
+                to: day.date,
+                kind: "spend",
+                title: `${day.day} spending`,
+              })
+            }
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                open({
+                  from: day.date,
+                  to: day.date,
+                  kind: "spend",
+                  title: `${day.day} spending`,
+                });
+              }
+            }}
           >
             {/* Tooltip */}
             {isHovered && (
@@ -57,6 +78,7 @@ export function DayBars({ days, todayDate }: Props) {
                   <div className="week-tooltip-cat">{day.topCategory}</div>
                 )}
                 <div className="week-tooltip-count">{day.txnCount} txn{day.txnCount !== 1 ? "s" : ""}</div>
+                <div className="week-tooltip-count">Click to view</div>
               </div>
             )}
 

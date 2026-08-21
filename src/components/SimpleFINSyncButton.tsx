@@ -27,11 +27,19 @@ function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+export interface SyncResult {
+  imported: number;
+  skipped: number;
+  chunksUsed: number;
+  /** Non-fatal warnings from SimpleFIN (e.g. a bank connection lagging). */
+  sfErrors: { msg: string }[];
+}
+
 export async function runSync(opts: {
   accountId: string;
   startDate?: string;
   endDate?: string;
-}): Promise<{ imported: number; skipped: number; chunksUsed: number }> {
+}): Promise<SyncResult> {
   const res = await fetch("/api/simplefin/sync", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -45,6 +53,7 @@ export async function runSync(opts: {
     imported?: number;
     skipped?: number;
     chunksUsed?: number;
+    sfErrors?: { msg: string }[];
     error?: string;
   };
   if (!res.ok) throw new Error(data.error ?? "Sync failed");
@@ -52,6 +61,7 @@ export async function runSync(opts: {
     imported: data.imported ?? 0,
     skipped: data.skipped ?? 0,
     chunksUsed: data.chunksUsed ?? 1,
+    sfErrors: data.sfErrors ?? [],
   };
 }
 
@@ -59,6 +69,7 @@ export function SimpleFINSyncButton({ accountId, lastSyncAt }: Props) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<string | null>(null);
+  const [sfErrors, setSfErrors] = useState<{ msg: string }[]>([]);
   const [err, setErr] = useState("");
   const [showRange, setShowRange] = useState(false);
   const [fromDate, setFromDate] = useState(ytdStart());
@@ -69,11 +80,13 @@ export function SimpleFINSyncButton({ accountId, lastSyncAt }: Props) {
     setBusy(true);
     setResult(null);
     setErr("");
+    setSfErrors([]);
     setShowRange(false);
     try {
       const r = await runSync({ accountId, startDate, endDate });
-      const chunks = r.chunksUsed > 1 ? ` (${r.chunksUsed} requests)` : "";
+      const chunks = r.chunksUsed > 1 ? ` · ${r.chunksUsed} API requests used` : "";
       setResult(`+${r.imported} new${chunks}`);
+      setSfErrors(r.sfErrors);
       router.refresh();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Sync failed");
@@ -155,6 +168,16 @@ export function SimpleFINSyncButton({ accountId, lastSyncAt }: Props) {
       )}
 
       {err && <p style={{ color: "var(--rose)", fontSize: "0.78rem", margin: "0.25rem 0 0" }}>{err}</p>}
+
+      {sfErrors.length > 0 && (
+        <div style={{ marginTop: "0.3rem" }}>
+          {sfErrors.map((e, i) => (
+            <p key={i} style={{ color: "var(--amber)", fontSize: "0.75rem", margin: "0.1rem 0" }}>
+              ⚠ {e.msg}
+            </p>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

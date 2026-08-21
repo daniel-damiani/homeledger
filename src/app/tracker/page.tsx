@@ -7,8 +7,10 @@ import { CumulativeChart } from "@/components/tracker/CumulativeChart";
 import { SavingsRing } from "@/components/tracker/SavingsRing";
 import { StatRing } from "@/components/tracker/StatRing";
 import { WeekInReview } from "@/components/tracker/WeekInReview";
+import { MonthInReview } from "@/components/tracker/MonthInReview";
+import { TxnDrilldownProvider } from "@/components/tracker/TxnDrilldown";
 import { ensureSettings } from "@/lib/auth";
-import { formatMonthKey } from "@/lib/money";
+import { formatMonthKey, monthBounds } from "@/lib/money";
 import { getTrackerSnapshot, getTrackerYtdSnapshot } from "@/lib/tracker";
 
 export const dynamic = "force-dynamic";
@@ -25,13 +27,14 @@ export default async function TrackerPage({
   const currentYear = now.getFullYear();
   const view = sp.view ?? "month";
   const isWeek = view === "week";
+  const isReview = view === "review";
   const isYtd = view === "ytd";
 
   const currentMonth = formatMonthKey(now);
   const month = sp.month && /^\d{4}-\d{2}$/.test(sp.month) ? sp.month : currentMonth;
   const [y, m] = month.split("-").map(Number);
 
-  const snap = isWeek
+  const snap = isWeek || isReview
     ? null
     : isYtd
     ? await getTrackerYtdSnapshot(y, now)
@@ -44,14 +47,22 @@ export default async function TrackerPage({
   const prevYear = y - 1;
   const nextYear = y + 1;
 
+  const periodFrom = isYtd ? `${y}-01-01` : monthBounds(month).start.toISOString().slice(0, 10);
+  const periodTo = isYtd
+    ? y < currentYear
+      ? `${y}-12-31`
+      : monthBounds(formatMonthKey(now)).end.toISOString().slice(0, 10)
+    : monthBounds(month).end.toISOString().slice(0, 10);
+
   return (
     <main className="shell shell-wide">
       <AppNav pathname="/tracker" />
       <h1>Tracker</h1>
+      <TxnDrilldownProvider>
 
       {/* ── View tabs + period navigation ── */}
       <div className="tracker-view-bar">
-        {!isWeek && (
+        {!isWeek && !isReview && (
           <div className="tracker-period-nav">
             {isYtd ? (
               <>
@@ -73,9 +84,15 @@ export default async function TrackerPage({
         <div className="tracker-view-tabs">
           <Link
             href={`/tracker?month=${month}`}
-            className={`tracker-view-tab${!isWeek && !isYtd ? " active" : ""}`}
+            className={`tracker-view-tab${!isWeek && !isReview && !isYtd ? " active" : ""}`}
           >
             Month
+          </Link>
+          <Link
+            href={`/tracker?month=${month}&view=review`}
+            className={`tracker-view-tab${isReview ? " active" : ""}`}
+          >
+            Review
           </Link>
           <Link
             href="/tracker?view=week"
@@ -92,11 +109,14 @@ export default async function TrackerPage({
         </div>
       </div>
 
+      {/* ── Month in Review ── */}
+      {isReview && <MonthInReview initialMonth={month} />}
+
       {/* ── Week in Review ── */}
       {isWeek && <WeekInReview />}
 
       {/* ── Month / YTD panels ── */}
-      {!isWeek && snap && (
+      {!isWeek && !isReview && snap && (
         <>
           {snap.goalCents <= 0 && (
             <p className="lede" style={{ marginTop: 0 }}>
@@ -256,22 +276,68 @@ export default async function TrackerPage({
 
           {/* Spending breakdowns */}
           <div className="grid" style={{ gridTemplateColumns: "1.1fr 1fr", gap: "1rem", marginTop: "1rem" }}>
-            <CategoryDonut rows={snap.byCategory} title="Where spending went" />
-            <CategoryBars title="By category" rows={snap.byCategory} />
+            <CategoryDonut
+              rows={snap.byCategory}
+              title="Where spending went"
+              from={periodFrom}
+              to={periodTo}
+              kind="spend"
+              match="category"
+            />
+            <CategoryBars
+              title="By category"
+              rows={snap.byCategory}
+              from={periodFrom}
+              to={periodTo}
+              kind="spend"
+              match="category"
+            />
           </div>
 
           <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", gap: "1rem", marginTop: "1rem" }}>
-            <CategoryBars title="By account (spending)" rows={snap.byAccount} maxRows={10} />
-            <CategoryBars title="Top spending payees" rows={snap.byPayee} maxRows={12} />
+            <CategoryBars
+              title="By account (spending)"
+              rows={snap.byAccount}
+              maxRows={10}
+              from={periodFrom}
+              to={periodTo}
+              kind="spend"
+              match="account"
+            />
+            <CategoryBars
+              title="Top spending payees"
+              rows={snap.byPayee}
+              maxRows={12}
+              from={periodFrom}
+              to={periodTo}
+              kind="spend"
+              match="payee"
+            />
           </div>
 
           {/* Income breakdowns */}
           <div className="grid" style={{ gridTemplateColumns: "1.1fr 1fr", gap: "1rem", marginTop: "1rem" }}>
-            <CategoryDonut rows={snap.byIncomePayee} title="Income sources" />
-            <CategoryBars title="Income by source" rows={snap.byIncomePayee} maxRows={12} />
+            <CategoryDonut
+              rows={snap.byIncomePayee}
+              title="Income sources"
+              from={periodFrom}
+              to={periodTo}
+              kind="income"
+              match="payee"
+            />
+            <CategoryBars
+              title="Income by source"
+              rows={snap.byIncomePayee}
+              maxRows={12}
+              from={periodFrom}
+              to={periodTo}
+              kind="income"
+              match="payee"
+            />
           </div>
         </>
       )}
+      </TxnDrilldownProvider>
     </main>
   );
 }

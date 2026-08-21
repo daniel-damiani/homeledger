@@ -308,9 +308,21 @@ export type WeekData = {
   topTxns: { payee: string; amountCents: number; category: string; date: string }[];
 };
 
+/** 13-week average — one entry per category (or overall) */
+export type WeekAverage = {
+  /** Number of full weeks included in the average (up to 13, skipping the current week). */
+  weeksIncluded: number;
+  spentCents: number;          // average weekly spend
+  incomeCents: number;         // average weekly income
+  surplusCents: number;        // average weekly surplus
+  byCategory: NamedAmount[];   // average spend per category per week
+};
+
 export type WeekSnapshot = {
   current: WeekData;
   previous: WeekData;
+  /** 13-week (≈3-month) rolling average, excluding the current week. */
+  avg13: WeekAverage;
   narrative: string;
 };
 
@@ -456,15 +468,392 @@ export function buildNarrative(current: WeekData, previous: WeekData): string {
   return lines.join(" ") || "Here's your week at a glance.";
 }
 
+/**
+ * Compute a rolling average over the 13 full weeks ending the Sunday before `monday`.
+ * Uses a single DB query covering the whole 13-week window — no per-week round-trips.
+ */
+async function compute13WeekAverage(monday: Date): Promise<WeekAverage> {
+  const WEEKS = 13;
+  // Window: [monday - 13*7 days, monday - 1 ms)
+  const windowEnd = new Date(monday.getTime() - 1);
+  const windowStart = new Date(monday);
+  windowStart.setUTCDate(monday.getUTCDate() - WEEKS * 7);
+
+  const txns = await prisma.transaction.findMany({
+    where: { date: { gte: windowStart, lte: windowEnd } },
+    include: { category: true },
+  });
+
+  // Collect which weeks actually have data so we use a real week count (not assume 13)
+  const weeksWithData = new Set<string>();
+  let totalSpent = 0;
+  let totalIncome = 0;
+  const byCategoryTotal = new Map<string, number>();
+
+  for (const t of txns) {
+    if (isTransferCat(t.category)) continue;
+    // Identify the week by its Monday date string
+    const wm = toWeekMonday(t.date);
+    weeksWithData.add(wm.toISOString().slice(0, 10));
+
+    if (t.amountCents < 0) {
+      const spent = Math.abs(t.amountCents);
+      totalSpent += spent;
+      const cat = t.category?.name ?? "Uncategorized";
+      byCategoryTotal.set(cat, (byCategoryTotal.get(cat) ?? 0) + spent);
+    } else if (t.amountCents > 0) {
+      totalIncome += t.amountCents;
+    }
+  }
+
+  const n = Math.max(weeksWithData.size, 1);
+
+  const byCategory: NamedAmount[] = [...byCategoryTotal.entries()]
+    .map(([name, cents]) => ({ name, cents: Math.round(cents / n) }))
+    .sort((a, b) => b.cents - a.cents);
+
+  return {
+    weeksIncluded: n,
+    spentCents: Math.round(totalSpent / n),
+    incomeCents: Math.round(totalIncome / n),
+    surplusCents: Math.round((totalIncome - totalSpent) / n),
+    byCategory,
+  };
+}
+
 export async function getWeekSnapshot(weekDate: Date): Promise<WeekSnapshot> {
   const monday = toWeekMonday(weekDate);
   const prevMonday = new Date(monday);
   prevMonday.setUTCDate(monday.getUTCDate() - 7);
 
-  const [current, previous] = await Promise.all([
+  const [current, previous, avg13] = await Promise.all([
     aggregateWeek(monday),
     aggregateWeek(prevMonday),
+    compute13WeekAverage(monday),
   ]);
 
-  return { current, previous, narrative: buildNarrative(current, previous) };
+  return { current, previous, avg13, narrative: buildNarrative(current, previous) };
+}
+
+// ---------------------------------------------------------------------------
+// Month in Review
+// ---------------------------------------------------------------------------
+
+export type MonthDayData = {
+  date: string;       // "2026-08-05"
+  dayNum: number;     // 5
+  spentCents: number;
+  incomeCents: number;
+  txnCount: number;
+  topCategory: string;
+};
+
+export type MonthReviewData = {
+  monthKey: string;   // "2026-08"
+  spentCents: number;
+  incomeCents: number;
+  surplusCents: number;
+  txnCount: number;
+  byCategory: NamedAmount[];
+  byPayee: NamedAmount[];
+  byDay: MonthDayData[];
+  topTxns: { payee: string; amountCents: number; category: string; date: string }[];
+};
+
+/** 3-month rolling average */
+export type MonthAvg = {
+  monthsIncluded: number;
+  spentCents: number;
+  incomeCents: number;
+  surplusCents: number;
+  byCategory: NamedAmount[];
+};
+
+export type MonthReviewSnapshot = {
+  current: MonthReviewData;
+  previous: MonthReviewData;
+  avg3: MonthAvg;
+  narrative: string;
+};
+
+async function aggregateMonthForReview(monthKey: string): Promise<MonthReviewData> {
+  const [year, month] = monthKey.split("-").map(Number);
+  const start = new Date(Date.UTC(year, month - 1, 1));
+  const end = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
+  const daysInMonth = end.getUTCDate();
+
+  const txns = await prisma.transaction.findMany({
+    where: { date: { gte: start, lte: end } },
+    include: { category: true },
+    orderBy: { amountCents: "asc" }, // most negative first for topTxns
+  });
+
+  let spentCents = 0;
+  let incomeCents = 0;
+  const byCategoryMap = new Map<string, number>();
+  const byPayeeMap = new Map<string, number>();
+  const byDaySpent = new Array(daysInMonth).fill(0) as number[];
+  const byDayIncome = new Array(daysInMonth).fill(0) as number[];
+  const byDayCount = new Array(daysInMonth).fill(0) as number[];
+  const byDayCat = new Array(daysInMonth).fill("") as string[];
+  const byDayCatMax = new Array(daysInMonth).fill(0) as number[];
+
+  for (const t of txns) {
+    if (isTransferCat(t.category)) continue;
+    const dayIdx = t.date.getUTCDate() - 1; // 0-indexed
+
+    if (t.amountCents < 0) {
+      const spent = Math.abs(t.amountCents);
+      spentCents += spent;
+      byDaySpent[dayIdx] += spent;
+      byDayCount[dayIdx] += 1;
+      const cat = t.category?.name ?? "Uncategorized";
+      byCategoryMap.set(cat, (byCategoryMap.get(cat) ?? 0) + spent);
+      const payeeKey = payeeGroupKey(t.payee);
+      byPayeeMap.set(payeeKey, (byPayeeMap.get(payeeKey) ?? 0) + spent);
+      if (spent > byDayCatMax[dayIdx]) {
+        byDayCatMax[dayIdx] = spent;
+        byDayCat[dayIdx] = cat;
+      }
+    } else if (t.amountCents > 0) {
+      incomeCents += t.amountCents;
+      byDayIncome[dayIdx] += t.amountCents;
+    }
+  }
+
+  const sortDesc = (map: Map<string, number>): NamedAmount[] =>
+    [...map.entries()].map(([name, cents]) => ({ name, cents })).sort((a, b) => b.cents - a.cents);
+
+  const byDay: MonthDayData[] = Array.from({ length: daysInMonth }, (_, i) => ({
+    date: new Date(Date.UTC(year, month - 1, i + 1)).toISOString().slice(0, 10),
+    dayNum: i + 1,
+    spentCents: byDaySpent[i],
+    incomeCents: byDayIncome[i],
+    txnCount: byDayCount[i],
+    topCategory: byDayCat[i],
+  }));
+
+  const topTxns = txns
+    .filter((t) => t.amountCents < 0 && !isTransferCat(t.category))
+    .slice(0, 8)
+    .map((t) => ({
+      payee: t.payee,
+      amountCents: t.amountCents,
+      category: t.category?.name ?? "Uncategorized",
+      date: t.date.toISOString().slice(0, 10),
+    }));
+
+  return {
+    monthKey,
+    spentCents,
+    incomeCents,
+    surplusCents: incomeCents - spentCents,
+    txnCount: txns.filter((t) => !isTransferCat(t.category)).length,
+    byCategory: sortDesc(byCategoryMap),
+    byPayee: sortDesc(byPayeeMap).slice(0, 12),
+    byDay,
+    topTxns,
+  };
+}
+
+export function buildMonthNarrative(current: MonthReviewData, previous: MonthReviewData): string {
+  const currSpent = current.spentCents;
+  const prevSpent = previous.spentCents;
+
+  if (currSpent === 0 && prevSpent === 0) {
+    return current.incomeCents > 0
+      ? `Income of ${formatMoney(current.incomeCents)} with no spending recorded.`
+      : "No transactions recorded this month yet.";
+  }
+
+  const lines: string[] = [];
+
+  if (prevSpent > 0 && currSpent > 0) {
+    const deltaPct = Math.round(((currSpent - prevSpent) / prevSpent) * 100);
+    const [y, m] = previous.monthKey.split("-").map(Number);
+    const prevLabel = new Date(Date.UTC(y, m - 1, 15)).toLocaleString("en-US", { month: "long", timeZone: "UTC" });
+
+    if (deltaPct <= -15) {
+      lines.push(`Lighter month — spending down ${Math.abs(deltaPct)}% vs ${prevLabel}.`);
+    } else if (deltaPct >= 15) {
+      lines.push(`Heavier month — spending up ${deltaPct}% vs ${prevLabel}.`);
+    } else {
+      lines.push(`Spending is in line with ${prevLabel}.`);
+    }
+
+    // Find the biggest category change vs last month
+    const prevCatMap = new Map(previous.byCategory.map((c) => [c.name, c.cents]));
+    let biggestSpike = { name: "", delta: 0, pct: 0 };
+    for (const cat of current.byCategory) {
+      const prev = prevCatMap.get(cat.name) ?? 0;
+      const delta = cat.cents - prev;
+      if (prev > 0 && delta > 2000) {
+        const pct = Math.round((delta / prev) * 100);
+        if (pct > biggestSpike.pct) biggestSpike = { name: cat.name, delta, pct };
+      } else if (prev === 0 && cat.cents > 5000) {
+        if (cat.cents > biggestSpike.delta) biggestSpike = { name: cat.name, delta: cat.cents, pct: 100 };
+      }
+    }
+    if (biggestSpike.pct >= 30) {
+      lines.push(`${biggestSpike.name} drove the biggest jump — up ${formatMoney(biggestSpike.delta)}.`);
+    }
+  } else if (currSpent > 0) {
+    lines.push(`${formatMoney(currSpent)} spent this month.`);
+  }
+
+  if (current.surplusCents > 0) {
+    lines.push(`Net surplus of ${formatMoney(current.surplusCents)}.`);
+  } else if (current.surplusCents < 0) {
+    lines.push(`Spending exceeded income by ${formatMoney(Math.abs(current.surplusCents))}.`);
+  }
+
+  return lines.join(" ") || "Here's your month at a glance.";
+}
+
+/**
+ * Compute a rolling average over the 3 full months before `currentMonthKey`.
+ * Single DB query — no per-month round-trips.
+ */
+async function compute3MonthAverage(currentMonthKey: string): Promise<MonthAvg> {
+  const MONTHS = 3;
+  const [year, month] = currentMonthKey.split("-").map(Number);
+  const windowStart = new Date(Date.UTC(year, month - 1 - MONTHS, 1));
+  const windowEnd = new Date(Date.UTC(year, month - 1, 0, 23, 59, 59, 999)); // last ms before current month
+
+  const txns = await prisma.transaction.findMany({
+    where: { date: { gte: windowStart, lte: windowEnd } },
+    include: { category: true },
+  });
+
+  const monthsWithData = new Set<string>();
+  let totalSpent = 0;
+  let totalIncome = 0;
+  const byCategoryTotal = new Map<string, number>();
+
+  for (const t of txns) {
+    if (isTransferCat(t.category)) continue;
+    monthsWithData.add(formatMonthKey(t.date));
+    if (t.amountCents < 0) {
+      const spent = Math.abs(t.amountCents);
+      totalSpent += spent;
+      const cat = t.category?.name ?? "Uncategorized";
+      byCategoryTotal.set(cat, (byCategoryTotal.get(cat) ?? 0) + spent);
+    } else if (t.amountCents > 0) {
+      totalIncome += t.amountCents;
+    }
+  }
+
+  const n = Math.max(monthsWithData.size, 1);
+  const byCategory: NamedAmount[] = [...byCategoryTotal.entries()]
+    .map(([name, cents]) => ({ name, cents: Math.round(cents / n) }))
+    .sort((a, b) => b.cents - a.cents);
+
+  return {
+    monthsIncluded: n,
+    spentCents: Math.round(totalSpent / n),
+    incomeCents: Math.round(totalIncome / n),
+    surplusCents: Math.round((totalIncome - totalSpent) / n),
+    byCategory,
+  };
+}
+
+export async function getMonthReviewSnapshot(monthKey: string): Promise<MonthReviewSnapshot> {
+  const [year, month] = monthKey.split("-").map(Number);
+  const prevMonthKey = formatMonthKey(new Date(Date.UTC(year, month - 2, 1)));
+
+  const [current, previous, avg3] = await Promise.all([
+    aggregateMonthForReview(monthKey),
+    aggregateMonthForReview(prevMonthKey),
+    compute3MonthAverage(monthKey),
+  ]);
+
+  return { current, previous, avg3, narrative: buildMonthNarrative(current, previous) };
+}
+
+// ---------------------------------------------------------------------------
+// Tracker drill-down (click a visual → matching transactions)
+// ---------------------------------------------------------------------------
+
+export type TrackerTxnRow = {
+  id: string;
+  date: string;
+  accountName: string;
+  payee: string;
+  categoryName: string;
+  amountCents: number;
+};
+
+export type TrackerTxnQuery = {
+  from: string; // YYYY-MM-DD
+  to: string;
+  kind?: "spend" | "income" | "all";
+  category?: string;
+  excludeCategories?: string[];
+  excludePayees?: string[];
+  account?: string;
+  payee?: string;
+};
+
+const DRILLDOWN_LIMIT = 250;
+
+export async function queryTrackerTransactions(q: TrackerTxnQuery): Promise<{
+  rows: TrackerTxnRow[];
+  totalCents: number;
+  count: number;
+  truncated: boolean;
+}> {
+  const start = new Date(`${q.from}T00:00:00.000Z`);
+  const end = new Date(`${q.to}T23:59:59.999Z`);
+  const kind = q.kind ?? "spend";
+
+  const amountFilter =
+    kind === "spend" ? { lt: 0 as const } : kind === "income" ? { gt: 0 as const } : undefined;
+
+  const txns = await prisma.transaction.findMany({
+    where: {
+      date: { gte: start, lte: end },
+      ...(amountFilter ? { amountCents: amountFilter } : {}),
+      ...(q.account ? { account: { name: q.account } } : {}),
+    },
+    include: {
+      category: { select: { name: true, isTransfer: true } },
+      account: { select: { name: true } },
+    },
+    orderBy: [{ date: "desc" }, { amountCents: "asc" }],
+  });
+
+  const exclude = new Set((q.excludeCategories ?? []).map((n) => n.toUpperCase()));
+  const excludePayees = new Set(q.excludePayees ?? []);
+  const catFilter = q.category?.trim();
+  const payeeFilter = q.payee?.trim();
+
+  const matched = txns.filter((t) => {
+    if (kind !== "all" && isTransferCat(t.category)) return false;
+
+    const catName = t.category?.name ?? "Uncategorized";
+    if (catFilter) {
+      if (catFilter === "Uncategorized") {
+        if (t.category && t.category.name !== "Uncategorized") return false;
+      } else if (catName !== catFilter) {
+        return false;
+      }
+    }
+    if (exclude.size > 0 && exclude.has(catName.toUpperCase())) return false;
+    if (payeeFilter && payeeGroupKey(t.payee) !== payeeFilter) return false;
+    if (excludePayees.size > 0 && excludePayees.has(payeeGroupKey(t.payee))) return false;
+    return true;
+  });
+
+  const totalCents = matched.reduce((s, t) => s + t.amountCents, 0);
+  const truncated = matched.length > DRILLDOWN_LIMIT;
+  const rows = matched.slice(0, DRILLDOWN_LIMIT).map((t) => ({
+    id: t.id,
+    date: t.date.toISOString().slice(0, 10),
+    accountName: t.account.name,
+    payee: t.payee,
+    categoryName: t.category?.name ?? "Uncategorized",
+    amountCents: t.amountCents,
+  }));
+
+  return { rows, totalCents, count: matched.length, truncated };
 }

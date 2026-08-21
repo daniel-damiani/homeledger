@@ -140,7 +140,8 @@ export async function fetchSimpleFinAccounts(
  * by breaking it into SIMPLEFIN_CHUNK_DAYS-day windows and walking forward.
  *
  * Stops early when a chunk returns zero transactions (bank has no more history).
- * Returns all unique transactions (deduped by id) and the latest errlist.
+ * Returns all unique transactions (deduped by id), the latest errlist, and the most-recent
+ * account snapshot (with balance data) so callers don't need a separate balances-only call.
  *
  * @param maxChunks  Safety cap on number of API calls (default 6 ≈ ~510 days). Each chunk
  *                   uses one of the 24 daily quota requests for this Access URL.
@@ -150,7 +151,13 @@ export async function fetchSimpleFinChunked(
   simpleFinAccountId: string,
   startDate: Date,
   opts: { maxChunks?: number; timeoutMs?: number; endDate?: Date } = {}
-): Promise<{ transactions: SimpleFINTransaction[]; errlist: SimpleFINError[]; chunksUsed: number }> {
+): Promise<{
+  transactions: SimpleFINTransaction[];
+  errlist: SimpleFINError[];
+  chunksUsed: number;
+  /** Most recent account snapshot (balance, available-balance). Null if account never appeared. */
+  latestAccount: SimpleFINAccount | null;
+}> {
   const maxChunks = opts.maxChunks ?? 6;
   const chunkMs = SIMPLEFIN_CHUNK_DAYS * 24 * 60 * 60 * 1000;
   const now = opts.endDate ?? new Date();
@@ -158,6 +165,7 @@ export async function fetchSimpleFinChunked(
   const seen = new Set<string>();
   const allTransactions: SimpleFINTransaction[] = [];
   let lastErrlist: SimpleFINError[] = [];
+  let latestAccount: SimpleFINAccount | null = null;
   let chunksUsed = 0;
   let consecutiveEmpty = 0;
 
@@ -175,6 +183,9 @@ export async function fetchSimpleFinChunked(
     lastErrlist = data.errlist ?? [];
 
     const sfAcc = data.accounts.find((a) => a.id === simpleFinAccountId);
+    if (sfAcc) {
+      latestAccount = sfAcc; // keep updating — last chunk wins (most current balance)
+    }
     const txns = sfAcc?.transactions ?? [];
     const newTxns = txns.filter((t) => !seen.has(t.id));
     newTxns.forEach((t) => seen.add(t.id));
@@ -192,7 +203,7 @@ export async function fetchSimpleFinChunked(
     chunkStart = new Date(chunkEnd.getTime() - 5 * 24 * 60 * 60 * 1000);
   }
 
-  return { transactions: allTransactions, errlist: lastErrlist, chunksUsed };
+  return { transactions: allTransactions, errlist: lastErrlist, chunksUsed, latestAccount };
 }
 
 // ---------------------------------------------------------------------------

@@ -1,4 +1,8 @@
+"use client";
+
 import { formatMoney } from "@/lib/money";
+import { useTxnDrilldown, type DrilldownParams } from "./TxnDrilldown";
+import type { DrillMatch } from "./CategoryBars";
 
 const PALETTE = [
   "#2ec4b6",
@@ -14,16 +18,48 @@ const PALETTE = [
 export function CategoryDonut({
   rows,
   title = "Spending mix",
+  from,
+  to,
+  kind = "spend",
+  match,
 }: {
   rows: { name: string; cents: number }[];
   title?: string;
+  from?: string;
+  to?: string;
+  kind?: "spend" | "income";
+  match?: DrillMatch;
 }) {
+  const { open } = useTxnDrilldown();
   const slice = rows.slice(0, 6);
-  const total = slice.reduce((s, r) => s + r.cents, 0);
   const other = rows.slice(6).reduce((s, r) => s + r.cents, 0);
+  const total = slice.reduce((s, r) => s + r.cents, 0);
   const parts =
     other > 0 ? [...slice, { name: "Other", cents: other }] : slice;
   const sum = parts.reduce((s, r) => s + r.cents, 0) || 1;
+  const canDrill = Boolean(from && to && match);
+
+  function drill(name: string) {
+    if (!from || !to || !match) return;
+    const params: DrilldownParams = {
+      from,
+      to,
+      kind,
+      title: name,
+    };
+    if (name === "Other") {
+      params.title = "Other";
+      if (match === "category") params.excludeCategories = slice.map((s) => s.name);
+      else if (match === "payee") params.excludePayees = slice.map((s) => s.name);
+    } else if (match === "category") {
+      params.category = name;
+    } else if (match === "account") {
+      params.account = name;
+    } else {
+      params.payee = name;
+    }
+    open(params);
+  }
 
   const size = 160;
   const r = 58;
@@ -60,10 +96,32 @@ export function CategoryDonut({
   return (
     <section className="panel">
       <h2>{title}</h2>
+      {canDrill && (
+        <p className="stat muted" style={{ marginTop: 0 }}>
+          Click a slice or label to see the transactions.
+        </p>
+      )}
       <div className="tracker-donut-wrap">
         <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
           {arcs.map((a) => (
-            <path key={a.name} d={a.d} fill={a.color} opacity={0.9} />
+            <path
+              key={a.name}
+              d={a.d}
+              fill={a.color}
+              opacity={0.9}
+              className={canDrill ? "drill-slice" : undefined}
+              role={canDrill ? "button" : undefined}
+              tabIndex={canDrill ? 0 : undefined}
+              aria-label={canDrill ? `${a.name}: ${formatMoney(a.cents)}` : undefined}
+              onClick={() => canDrill && drill(a.name)}
+              onKeyDown={(e) => {
+                if (!canDrill) return;
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  drill(a.name);
+                }
+              }}
+            />
           ))}
           <circle cx={cx} cy={cy} r={34} fill="var(--bg-1)" />
           <text
@@ -78,9 +136,19 @@ export function CategoryDonut({
         <ul className="tracker-legend">
           {arcs.map((a) => (
             <li key={a.name}>
-              <span className="swatch" style={{ background: a.color }} />
-              {a.name}{" "}
-              <span className="stat muted">{formatMoney(a.cents)}</span>
+              {canDrill ? (
+                <button type="button" className="drill-cell" onClick={() => drill(a.name)}>
+                  <span className="swatch" style={{ background: a.color }} />
+                  {a.name}{" "}
+                  <span className="stat muted">{formatMoney(a.cents)}</span>
+                </button>
+              ) : (
+                <>
+                  <span className="swatch" style={{ background: a.color }} />
+                  {a.name}{" "}
+                  <span className="stat muted">{formatMoney(a.cents)}</span>
+                </>
+              )}
             </li>
           ))}
         </ul>
