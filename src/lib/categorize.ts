@@ -1,4 +1,5 @@
 import { prisma } from "./db";
+import { ensureReimbursementCategory } from "./categories";
 
 /**
  * Extract a short normalized search key from a payee for history lookup.
@@ -21,8 +22,18 @@ function payeeSearchKey(payee: string): string {
   return words.join(" ");
 }
 
-export async function matchCategoryId(payee: string, memo?: string): Promise<string | null> {
+export async function matchCategoryId(
+  payee: string,
+  memo?: string,
+  amountCents?: number
+): Promise<string | null> {
   const hay = `${payee} ${memo ?? ""}`.toUpperCase();
+
+  // Incoming Venmo is a reimbursement, not income. Outgoing Venmo stays on other rules.
+  if (amountCents != null && amountCents > 0 && hay.includes("VENMO")) {
+    const reimb = await ensureReimbursementCategory();
+    return reimb.id;
+  }
 
   // 1. Rule-based match (highest priority)
   const rules = await prisma.categoryRule.findMany({

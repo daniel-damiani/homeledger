@@ -31,6 +31,7 @@ const CATEGORIES: Array<{
   { name: "Credit Payment", group: "Transfers", isTransfer: true, sortOrder: 70 },
   { name: "Transfer", group: "Transfers", isTransfer: true, sortOrder: 71 },
   { name: "Savings Contribution", group: "Goals", sortOrder: 80 },
+  { name: "Reimbursement", group: "Other", sortOrder: 90 },
   { name: "Uncategorized", group: "Other", sortOrder: 99 },
 ];
 

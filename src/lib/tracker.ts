@@ -1,5 +1,6 @@
 import { prisma } from "./db";
 import { clamp, formatMonthKey, monthBounds, formatMoney, shiftMonthKey } from "./money";
+import { ensureReimbursementSetup } from "./categories";
 
 export type NamedAmount = { name: string; cents: number };
 
@@ -29,10 +30,33 @@ export type TrackerSnapshot = {
   /** Daily cumulative surplus (month view) or monthly cumulative surplus (YTD view). */
   cumulative: { label: string; surplusCents: number }[];
   uncategorizedExpenseCents: number;
+  /** Expense-category inflows (Venmo splits, store refunds) netted out of spending. */
+  reimbursedCents: number;
 };
+
+type CatFlags = { isTransfer: boolean; isIncome: boolean; name: string } | null | undefined;
+
+export type TrackerFlow = "skip" | "spend" | "income" | "reimburse";
+
+function isUncategorized(cat: CatFlags): boolean {
+  return !cat || cat.name === "Uncategorized";
+}
 
 function isTransferCat(cat: { isTransfer: boolean } | null | undefined): boolean {
   return Boolean(cat?.isTransfer);
+}
+
+/**
+ * Classify a transaction for tracker totals.
+ * Uncategorized inflows stay income so unknown ACH is not treated as a reimbursement.
+ * Categorized expense inflows (Reimbursement, Dining credits, refunds) offset spending.
+ */
+export function classifyTrackerFlow(amountCents: number, cat: CatFlags): TrackerFlow {
+  if (amountCents === 0) return "skip";
+  if (cat?.isTransfer) return "skip";
+  if (amountCents < 0) return "spend";
+  if (cat?.isIncome || isUncategorized(cat)) return "income";
+  return "reimburse";
 }
 
 /**
@@ -91,6 +115,7 @@ async function aggregate(start: Date, end: Date) {
   let incomeCents = 0;
   let expenseCents = 0;
   let uncategorizedExpenseCents = 0;
+  let reimbursedCents = 0;
   let savingsDepositCents = 0;
   let investmentNetCents = 0;
   const byCategory = new Map<string, number>();
@@ -111,12 +136,13 @@ async function aggregate(start: Date, end: Date) {
   }
 
   for (const t of txns) {
-    if (isTransferCat(t.category)) continue;
-    if (t.amountCents > 0) {
+    const flow = classifyTrackerFlow(t.amountCents, t.category);
+    if (flow === "skip") continue;
+    if (flow === "income") {
       incomeCents += t.amountCents;
       const k = payeeGroupKey(t.payee);
       byIncomePayee.set(k, (byIncomePayee.get(k) ?? 0) + t.amountCents);
-    } else if (t.amountCents < 0) {
+    } else if (flow === "spend") {
       const spent = Math.abs(t.amountCents);
       expenseCents += spent;
       if (!t.category || t.category.name === "Uncategorized") uncategorizedExpenseCents += spent;
@@ -125,16 +151,29 @@ async function aggregate(start: Date, end: Date) {
       byAccount.set(t.account.name, (byAccount.get(t.account.name) ?? 0) + spent);
       const pk = payeeGroupKey(t.payee);
       byPayee.set(pk, (byPayee.get(pk) ?? 0) + spent);
+    } else {
+      const amt = t.amountCents;
+      reimbursedCents += amt;
+      expenseCents -= amt;
+      const cat = t.category?.name ?? "Uncategorized";
+      byCategory.set(cat, (byCategory.get(cat) ?? 0) - amt);
+      byAccount.set(t.account.name, (byAccount.get(t.account.name) ?? 0) - amt);
+      const pk = payeeGroupKey(t.payee);
+      byPayee.set(pk, (byPayee.get(pk) ?? 0) - amt);
     }
   }
 
   const sortDesc = (map: Map<string, number>): NamedAmount[] =>
-    [...map.entries()].map(([name, cents]) => ({ name, cents })).sort((a, b) => b.cents - a.cents);
+    [...map.entries()]
+      .map(([name, cents]) => ({ name, cents }))
+      .filter((r) => r.cents !== 0)
+      .sort((a, b) => b.cents - a.cents);
 
   return {
     incomeCents,
     expenseCents,
     uncategorizedExpenseCents,
+    reimbursedCents,
     savingsDepositCents,
     investmentNetCents,
     byCategory: sortDesc(byCategory),
@@ -148,6 +187,7 @@ async function aggregate(start: Date, end: Date) {
 }
 
 export async function getTrackerSnapshot(month = formatMonthKey()): Promise<TrackerSnapshot> {
+  await ensureReimbursementSetup();
   const settings = await prisma.appSettings.findUnique({ where: { id: 1 } });
   const goalCents = settings?.monthlySavingsGoalCents ?? 0;
   const { start, end } = monthBounds(month);
@@ -201,10 +241,12 @@ export async function getTrackerSnapshot(month = formatMonthKey()): Promise<Trac
     byInvestmentAccount: data.byInvestmentAccount,
     cumulative,
     uncategorizedExpenseCents: data.uncategorizedExpenseCents,
+    reimbursedCents: data.reimbursedCents,
   };
 }
 
 export async function getTrackerYtdSnapshot(year: number, now = new Date()): Promise<TrackerSnapshot> {
+  await ensureReimbursementSetup();
   const settings = await prisma.appSettings.findUnique({ where: { id: 1 } });
   const goalCents = settings?.monthlySavingsGoalCents ?? 0;
 
@@ -220,6 +262,7 @@ export async function getTrackerYtdSnapshot(year: number, now = new Date()): Pro
   let totalIncome = 0;
   let totalExpense = 0;
   let totalUncategorized = 0;
+  let totalReimbursed = 0;
   let totalSavings = 0;
   let totalInvestment = 0;
   const byCategoryMap = new Map<string, number>();
@@ -237,6 +280,7 @@ export async function getTrackerYtdSnapshot(year: number, now = new Date()): Pro
     totalIncome += data.incomeCents;
     totalExpense += data.expenseCents;
     totalUncategorized += data.uncategorizedExpenseCents;
+    totalReimbursed += data.reimbursedCents;
     totalSavings += data.savingsDepositCents;
     totalInvestment += data.investmentNetCents;
     for (const { name, cents } of data.byCategory) byCategoryMap.set(name, (byCategoryMap.get(name) ?? 0) + cents);
@@ -256,7 +300,10 @@ export async function getTrackerYtdSnapshot(year: number, now = new Date()): Pro
   const onPace = ytdGoalCents <= 0 || surplusCents >= ytdGoalCents;
 
   const sortDesc = (map: Map<string, number>): NamedAmount[] =>
-    [...map.entries()].map(([name, cents]) => ({ name, cents })).sort((a, b) => b.cents - a.cents);
+    [...map.entries()]
+      .map(([name, cents]) => ({ name, cents }))
+      .filter((r) => r.cents !== 0)
+      .sort((a, b) => b.cents - a.cents);
 
   return {
     label: `${year} YTD`,
@@ -280,6 +327,7 @@ export async function getTrackerYtdSnapshot(year: number, now = new Date()): Pro
     byInvestmentAccount: sortDesc(byInvestmentMap),
     cumulative,
     uncategorizedExpenseCents: totalUncategorized,
+    reimbursedCents: totalReimbursed,
   };
 }
 
@@ -359,11 +407,12 @@ async function aggregateWeek(monday: Date): Promise<WeekData> {
   const byDayCatMax = new Array(7).fill(0) as number[];
 
   for (const t of txns) {
-    if (isTransferCat(t.category)) continue;
+    const flow = classifyTrackerFlow(t.amountCents, t.category);
+    if (flow === "skip") continue;
     const dow = t.date.getUTCDay(); // 0=Sun
     const dayIdx = dow === 0 ? 6 : dow - 1; // Mon=0 … Sun=6
 
-    if (t.amountCents < 0) {
+    if (flow === "spend") {
       const spent = Math.abs(t.amountCents);
       spentCents += spent;
       byDaySpent[dayIdx] += spent;
@@ -374,7 +423,14 @@ async function aggregateWeek(monday: Date): Promise<WeekData> {
         byDayCatMax[dayIdx] = spent;
         byDayCat[dayIdx] = cat;
       }
-    } else if (t.amountCents > 0) {
+    } else if (flow === "reimburse") {
+      const amt = t.amountCents;
+      spentCents -= amt;
+      byDaySpent[dayIdx] -= amt;
+      byDayCount[dayIdx] += 1;
+      const cat = t.category?.name ?? "Uncategorized";
+      byCategoryMap.set(cat, (byCategoryMap.get(cat) ?? 0) - amt);
+    } else if (flow === "income") {
       incomeCents += t.amountCents;
       byDayIncome[dayIdx] += t.amountCents;
     }
@@ -394,7 +450,10 @@ async function aggregateWeek(monday: Date): Promise<WeekData> {
   });
 
   const sortDesc = (map: Map<string, number>): NamedAmount[] =>
-    [...map.entries()].map(([name, cents]) => ({ name, cents })).sort((a, b) => b.cents - a.cents);
+    [...map.entries()]
+      .map(([name, cents]) => ({ name, cents }))
+      .filter((r) => r.cents !== 0)
+      .sort((a, b) => b.cents - a.cents);
 
   // Top 5 expense transactions (most negative = largest spend)
   const topTxns = txns
@@ -491,17 +550,23 @@ async function compute13WeekAverage(monday: Date): Promise<WeekAverage> {
   const byCategoryTotal = new Map<string, number>();
 
   for (const t of txns) {
-    if (isTransferCat(t.category)) continue;
+    const flow = classifyTrackerFlow(t.amountCents, t.category);
+    if (flow === "skip") continue;
     // Identify the week by its Monday date string
     const wm = toWeekMonday(t.date);
     weeksWithData.add(wm.toISOString().slice(0, 10));
 
-    if (t.amountCents < 0) {
+    if (flow === "spend") {
       const spent = Math.abs(t.amountCents);
       totalSpent += spent;
       const cat = t.category?.name ?? "Uncategorized";
       byCategoryTotal.set(cat, (byCategoryTotal.get(cat) ?? 0) + spent);
-    } else if (t.amountCents > 0) {
+    } else if (flow === "reimburse") {
+      const amt = t.amountCents;
+      totalSpent -= amt;
+      const cat = t.category?.name ?? "Uncategorized";
+      byCategoryTotal.set(cat, (byCategoryTotal.get(cat) ?? 0) - amt);
+    } else if (flow === "income") {
       totalIncome += t.amountCents;
     }
   }
@@ -510,6 +575,7 @@ async function compute13WeekAverage(monday: Date): Promise<WeekAverage> {
 
   const byCategory: NamedAmount[] = [...byCategoryTotal.entries()]
     .map(([name, cents]) => ({ name, cents: Math.round(cents / n) }))
+    .filter((r) => r.cents !== 0)
     .sort((a, b) => b.cents - a.cents);
 
   return {
@@ -522,6 +588,7 @@ async function compute13WeekAverage(monday: Date): Promise<WeekAverage> {
 }
 
 export async function getWeekSnapshot(weekDate: Date): Promise<WeekSnapshot> {
+  await ensureReimbursementSetup();
   const monday = toWeekMonday(weekDate);
   const prevMonday = new Date(monday);
   prevMonday.setUTCDate(monday.getUTCDate() - 7);
@@ -599,10 +666,11 @@ async function aggregateMonthForReview(monthKey: string): Promise<MonthReviewDat
   const byDayCatMax = new Array(daysInMonth).fill(0) as number[];
 
   for (const t of txns) {
-    if (isTransferCat(t.category)) continue;
+    const flow = classifyTrackerFlow(t.amountCents, t.category);
+    if (flow === "skip") continue;
     const dayIdx = t.date.getUTCDate() - 1; // 0-indexed
 
-    if (t.amountCents < 0) {
+    if (flow === "spend") {
       const spent = Math.abs(t.amountCents);
       spentCents += spent;
       byDaySpent[dayIdx] += spent;
@@ -615,14 +683,26 @@ async function aggregateMonthForReview(monthKey: string): Promise<MonthReviewDat
         byDayCatMax[dayIdx] = spent;
         byDayCat[dayIdx] = cat;
       }
-    } else if (t.amountCents > 0) {
+    } else if (flow === "reimburse") {
+      const amt = t.amountCents;
+      spentCents -= amt;
+      byDaySpent[dayIdx] -= amt;
+      byDayCount[dayIdx] += 1;
+      const cat = t.category?.name ?? "Uncategorized";
+      byCategoryMap.set(cat, (byCategoryMap.get(cat) ?? 0) - amt);
+      const payeeKey = payeeGroupKey(t.payee);
+      byPayeeMap.set(payeeKey, (byPayeeMap.get(payeeKey) ?? 0) - amt);
+    } else if (flow === "income") {
       incomeCents += t.amountCents;
       byDayIncome[dayIdx] += t.amountCents;
     }
   }
 
   const sortDesc = (map: Map<string, number>): NamedAmount[] =>
-    [...map.entries()].map(([name, cents]) => ({ name, cents })).sort((a, b) => b.cents - a.cents);
+    [...map.entries()]
+      .map(([name, cents]) => ({ name, cents }))
+      .filter((r) => r.cents !== 0)
+      .sort((a, b) => b.cents - a.cents);
 
   const byDay: MonthDayData[] = Array.from({ length: daysInMonth }, (_, i) => ({
     date: new Date(Date.UTC(year, month - 1, i + 1)).toISOString().slice(0, 10),
@@ -731,14 +811,20 @@ async function compute3MonthAverage(currentMonthKey: string): Promise<MonthAvg> 
   const byCategoryTotal = new Map<string, number>();
 
   for (const t of txns) {
-    if (isTransferCat(t.category)) continue;
+    const flow = classifyTrackerFlow(t.amountCents, t.category);
+    if (flow === "skip") continue;
     monthsWithData.add(formatMonthKey(t.date));
-    if (t.amountCents < 0) {
+    if (flow === "spend") {
       const spent = Math.abs(t.amountCents);
       totalSpent += spent;
       const cat = t.category?.name ?? "Uncategorized";
       byCategoryTotal.set(cat, (byCategoryTotal.get(cat) ?? 0) + spent);
-    } else if (t.amountCents > 0) {
+    } else if (flow === "reimburse") {
+      const amt = t.amountCents;
+      totalSpent -= amt;
+      const cat = t.category?.name ?? "Uncategorized";
+      byCategoryTotal.set(cat, (byCategoryTotal.get(cat) ?? 0) - amt);
+    } else if (flow === "income") {
       totalIncome += t.amountCents;
     }
   }
@@ -746,6 +832,7 @@ async function compute3MonthAverage(currentMonthKey: string): Promise<MonthAvg> 
   const n = Math.max(monthsWithData.size, 1);
   const byCategory: NamedAmount[] = [...byCategoryTotal.entries()]
     .map(([name, cents]) => ({ name, cents: Math.round(cents / n) }))
+    .filter((r) => r.cents !== 0)
     .sort((a, b) => b.cents - a.cents);
 
   return {
@@ -758,6 +845,7 @@ async function compute3MonthAverage(currentMonthKey: string): Promise<MonthAvg> 
 }
 
 export async function getMonthReviewSnapshot(monthKey: string): Promise<MonthReviewSnapshot> {
+  await ensureReimbursementSetup();
   const prevMonthKey = shiftMonthKey(monthKey, -1);
 
   const [current, previous, avg3] = await Promise.all([
@@ -805,17 +893,13 @@ export async function queryTrackerTransactions(q: TrackerTxnQuery): Promise<{
   const end = new Date(`${q.to}T23:59:59.999Z`);
   const kind = q.kind ?? "spend";
 
-  const amountFilter =
-    kind === "spend" ? { lt: 0 as const } : kind === "income" ? { gt: 0 as const } : undefined;
-
   const txns = await prisma.transaction.findMany({
     where: {
       date: { gte: start, lte: end },
-      ...(amountFilter ? { amountCents: amountFilter } : {}),
       ...(q.account ? { account: { name: q.account } } : {}),
     },
     include: {
-      category: { select: { name: true, isTransfer: true } },
+      category: { select: { name: true, isTransfer: true, isIncome: true } },
       account: { select: { name: true } },
     },
     orderBy: [{ date: "desc" }, { amountCents: "asc" }],
@@ -827,7 +911,10 @@ export async function queryTrackerTransactions(q: TrackerTxnQuery): Promise<{
   const payeeFilter = q.payee?.trim();
 
   const matched = txns.filter((t) => {
-    if (kind !== "all" && isTransferCat(t.category)) return false;
+    const flow = classifyTrackerFlow(t.amountCents, t.category);
+    if (kind === "spend" && flow !== "spend" && flow !== "reimburse") return false;
+    if (kind === "income" && flow !== "income") return false;
+    if (kind === "all" && flow === "skip") return false;
 
     const catName = t.category?.name ?? "Uncategorized";
     if (catFilter) {

@@ -31,8 +31,9 @@ export function CategoryDonut({
   match?: DrillMatch;
 }) {
   const { open } = useTxnDrilldown();
-  const slice = rows.slice(0, 6);
-  const other = rows.slice(6).reduce((s, r) => s + r.cents, 0);
+  const positive = rows.filter((r) => r.cents > 0);
+  const slice = positive.slice(0, 6);
+  const other = positive.slice(6).reduce((s, r) => s + r.cents, 0);
   const total = slice.reduce((s, r) => s + r.cents, 0);
   const parts =
     other > 0 ? [...slice, { name: "Other", cents: other }] : slice;

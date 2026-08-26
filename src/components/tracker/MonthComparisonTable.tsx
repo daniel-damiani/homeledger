@@ -63,7 +63,7 @@ export function MonthComparisonTable({ current, previous, avg3 }: Props) {
         pVsAvg: avg > 0 ? Math.round((dVsAvg / avg) * 100) : null,
       };
     })
-    .filter((r) => r.curr > 0 || r.prev > 0 || r.avg > 0)
+    .filter((r) => r.curr !== 0 || r.prev !== 0 || r.avg !== 0)
     .sort((a, b) => b.curr - a.curr);
 
   const tCurr = current.spentCents;
@@ -118,7 +118,7 @@ export function MonthComparisonTable({ current, previous, avg3 }: Props) {
                 </button>
               </td>
               <td className="num">
-                {r.curr > 0 ? (
+                {r.curr !== 0 ? (
                   <button
                     type="button"
                     className="drill-cell"
@@ -131,7 +131,7 @@ export function MonthComparisonTable({ current, previous, avg3 }: Props) {
                 )}
               </td>
               <td className="num muted">
-                {r.prev > 0 ? (
+                {r.prev !== 0 ? (
                   <button
                     type="button"
                     className="drill-cell"
@@ -144,7 +144,7 @@ export function MonthComparisonTable({ current, previous, avg3 }: Props) {
                 )}
               </td>
               <td><DeltaCell delta={r.dVsPrev} pct={r.pVsPrev} /></td>
-              <td className="num muted">{r.avg > 0 ? formatMoney(r.avg) : "—"}</td>
+              <td className="num muted">{r.avg !== 0 ? formatMoney(r.avg) : "—"}</td>
               <td><DeltaCell delta={r.dVsAvg} pct={r.pVsAvg} /></td>
             </tr>
           ))}

@@ -35,8 +35,8 @@ export function CategoryBars({
 }) {
   const { open } = useTxnDrilldown();
   const slice = rows.slice(0, maxRows);
-  const max = slice[0]?.cents || 1;
-  const total = rows.reduce((s, r) => s + r.cents, 0);
+  const max = Math.max(...slice.map((r) => Math.abs(r.cents)), 1);
+  const absTotal = rows.reduce((s, r) => s + Math.abs(r.cents), 0);
   const canDrill = Boolean(from && to && match);
 
   function drill(name: string) {
@@ -71,8 +71,9 @@ export function CategoryBars({
       )}
       <div className="tracker-bars">
         {slice.map((row, i) => {
-          const pct = Math.round((row.cents / max) * 100);
-          const share = total > 0 ? Math.round((row.cents / total) * 100) : 0;
+          const pct = Math.round((Math.abs(row.cents) / max) * 100);
+          const share = absTotal > 0 ? Math.round((Math.abs(row.cents) / absTotal) * 100) : 0;
+          const isCredit = row.cents < 0;
           return (
             <button
               type="button"
@@ -81,8 +82,8 @@ export function CategoryBars({
               onClick={canDrill ? () => drill(row.name) : undefined}
             >
               <div className="tracker-bar-meta">
-                <span>{row.name}</span>
-                <span className="stat muted">
+                <span>{row.name}{isCredit ? " (credit)" : ""}</span>
+                <span className={`stat muted${isCredit ? " amount pos" : ""}`}>
                   {formatMoney(row.cents)} · {share}%
                 </span>
               </div>
@@ -90,7 +91,7 @@ export function CategoryBars({
                 <span
                   style={{
                     width: `${pct}%`,
-                    background: PALETTE[i % PALETTE.length],
+                    background: isCredit ? "var(--ok)" : PALETTE[i % PALETTE.length],
                   }}
                 />
               </div>

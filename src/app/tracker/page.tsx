@@ -136,8 +136,8 @@ export default async function TrackerPage({
                 </h2>
                 <p className="stat muted" style={{ marginTop: 0 }}>
                   {isYtd
-                    ? `Jan – ${new Date(Date.UTC(y, now.getMonth(), 1)).toLocaleString("default", { month: "short" })} · income − spending (transfers excluded)`
-                    : "Surplus = income − spending (transfers excluded)"}
+                    ? `Jan – ${new Date(Date.UTC(y, now.getMonth(), 1)).toLocaleString("default", { month: "short" })} · income − spending (transfers excluded, reimbursements netted)`
+                    : "Surplus = income − spending (transfers excluded, reimbursements netted)"}
                 </p>
                 <div className="tracker-chips">
                   <div className="tracker-chip">
@@ -148,6 +148,12 @@ export default async function TrackerPage({
                     <span className="stat muted">Spending</span>
                     <span className="stat amount neg"><Money cents={snap.expenseCents} /></span>
                   </div>
+                  {snap.reimbursedCents > 0 ? (
+                    <div className="tracker-chip">
+                      <span className="stat muted">Reimbursed</span>
+                      <span className="stat amount pos">−<Money cents={snap.reimbursedCents} /></span>
+                    </div>
+                  ) : null}
                   <div className="tracker-chip">
                     <span className="stat muted">Remaining to goal</span>
                     <span className="stat"><Money cents={snap.remainingCents} /></span>

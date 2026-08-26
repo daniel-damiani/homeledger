@@ -114,3 +114,53 @@ export async function deleteCategory(id: string) {
 
   return { ok: true as const };
 }
+
+const REIMBURSEMENT_NAME = "Reimbursement";
+
+export async function ensureReimbursementCategory() {
+  return prisma.category.upsert({
+    where: { name: REIMBURSEMENT_NAME },
+    create: {
+      name: REIMBURSEMENT_NAME,
+      group: "Other",
+      isIncome: false,
+      isTransfer: false,
+      sortOrder: 90,
+    },
+    update: {},
+  });
+}
+
+/**
+ * Recategorize checking-style VENMO inflows that were Income or Uncategorized.
+ * Leaves already-assigned expense categories (Dining, etc.) alone.
+ */
+export async function backfillVenmoReimbursements(reimbursementId?: string) {
+  const reimb = reimbursementId
+    ? { id: reimbursementId }
+    : await ensureReimbursementCategory();
+  const incomeCats = await prisma.category.findMany({
+    where: { isIncome: true },
+    select: { id: true },
+  });
+  const uncat = await getUncategorizedCategory();
+  const fromIds = [...incomeCats.map((c) => c.id), uncat?.id].filter(
+    (id): id is string => Boolean(id)
+  );
+
+  const result = await prisma.transaction.updateMany({
+    where: {
+      amountCents: { gt: 0 },
+      payee: { contains: "VENMO", mode: "insensitive" },
+      OR: [{ categoryId: null }, { categoryId: { in: fromIds } }],
+    },
+    data: { categoryId: reimb.id },
+  });
+  return result.count;
+}
+
+export async function ensureReimbursementSetup() {
+  const cat = await ensureReimbursementCategory();
+  await backfillVenmoReimbursements(cat.id);
+  return cat;
+}

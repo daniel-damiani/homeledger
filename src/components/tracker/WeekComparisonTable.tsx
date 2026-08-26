@@ -60,7 +60,7 @@ export function WeekComparisonTable({ current, previous, avg13 }: Props) {
         deltaPctVsAvg: avg > 0 ? Math.round((deltaVsAvg / avg) * 100) : null,
       };
     })
-    .filter((r) => r.current > 0 || r.previous > 0 || r.avg > 0)
+    .filter((r) => r.current !== 0 || r.previous !== 0 || r.avg !== 0)
     .sort((a, b) => b.current - a.current);
 
   const totalCurr = current.spentCents;
@@ -115,7 +115,7 @@ export function WeekComparisonTable({ current, previous, avg13 }: Props) {
                 </button>
               </td>
               <td className="num">
-                {r.current > 0 ? (
+                {r.current !== 0 ? (
                   <button
                     type="button"
                     className="drill-cell"
@@ -128,7 +128,7 @@ export function WeekComparisonTable({ current, previous, avg13 }: Props) {
                 )}
               </td>
               <td className="num muted">
-                {r.previous > 0 ? (
+                {r.previous !== 0 ? (
                   <button
                     type="button"
                     className="drill-cell"
@@ -143,7 +143,7 @@ export function WeekComparisonTable({ current, previous, avg13 }: Props) {
               <td>
                 <DeltaCell delta={r.deltaVsPrev} pct={r.deltaPctVsPrev} />
               </td>
-              <td className="num muted">{r.avg > 0 ? formatMoney(r.avg) : "—"}</td>
+              <td className="num muted">{r.avg !== 0 ? formatMoney(r.avg) : "—"}</td>
               <td>
                 <DeltaCell delta={r.deltaVsAvg} pct={r.deltaPctVsAvg} />
               </td>

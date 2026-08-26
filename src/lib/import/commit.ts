@@ -51,7 +51,7 @@ export async function commitImport(opts: {
       }
     }
 
-    const categoryId = await matchCategoryId(row.payee, row.memo);
+    const categoryId = await matchCategoryId(row.payee, row.memo, row.amountCents);
     try {
       const created = await prisma.transaction.create({
         data: {
