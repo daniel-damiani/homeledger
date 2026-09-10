@@ -1,0 +1,8 @@
+{
+  "name": "chase",
+  "dateColumn": "Posting Date",
+  "payeeColumn": "Description",
+  "amountColumn": "Amount",
+  "memoColumn": "Details",
+  "invertAmount": false
+}

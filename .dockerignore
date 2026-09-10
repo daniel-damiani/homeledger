@@ -1,0 +1,15 @@
+node_modules
+.next
+.git
+.env
+.env.*
+!.env.example
+backups/*
+!backups/.gitkeep
+npm-debug.log*
+yarn-error.log*
+.DS_Store
+coverage
+.turbo
+*.tsbuildinfo
+.cursor

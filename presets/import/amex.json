@@ -1,0 +1,7 @@
+{
+  "name": "amex",
+  "dateColumn": "Date",
+  "payeeColumn": "Description",
+  "amountColumn": "Amount",
+  "invertAmount": true
+}

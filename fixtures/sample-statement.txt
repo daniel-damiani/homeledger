@@ -1,0 +1,9 @@
+Sample Statement — HomeLedger Fixture
+Account ending 1234
+
+07/01/2026  WHOLE FOODS MARKET           -62.40
+07/03/2026  STARBUCKS #4412               -6.25
+07/05/2026  DIRECT DEP PAYROLL          2100.00
+07/08/2026  SHELL STATION 991            -41.00
+07/12/2026  NETFLIX.COM                  -15.99
+07/15/2026  CHIPOTLE MEXICAN GRILL       -13.50

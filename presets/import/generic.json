@@ -1,0 +1,8 @@
+{
+  "name": "generic",
+  "dateColumn": "Date",
+  "payeeColumn": "Description",
+  "amountColumn": "Amount",
+  "memoColumn": "Memo",
+  "invertAmount": false
+}

@@ -1,0 +1,7 @@
+{
+  "name": "capital-one",
+  "dateColumn": "Transaction Date",
+  "payeeColumn": "Description",
+  "amountColumn": "Transaction Amount",
+  "invertAmount": false
+}

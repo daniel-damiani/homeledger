@@ -1,0 +1,22 @@
+"Activity Date","Process Date","Settle Date","Instrument","Description","Trans Code","Quantity","Price","Amount"
+"7/31/2026","7/31/2026","7/31/2026","SPY","Cash Div: R/D 2026-06-18 P/D 2026-07-31 - 2.392481 shares at 1.903516","CDIV","","","$4.55"
+"7/20/2026","7/20/2026","7/21/2026","PPTY","U.S. Diversified Real Estate ETF
+CUSIP: 26922A511
+Dividend Reinvestment","Buy","0.000283","$35.27","($0.01)"
+"7/17/2026","7/17/2026","7/17/2026","PPTY","Cash Div: R/D 2026-07-16 P/D 2026-07-17 - 0.030021 shares at 0.293588","CDIV","","","$0.01"
+"7/13/2026","7/13/2026","7/13/2026","","Transfer from Brokerage to Roth IRA","ITRF","","","($100.02)"
+"7/8/2026","7/8/2026","7/8/2026","ITUB","Stock Lending","SLIP","","","$0.01"
+"7/8/2026","7/8/2026","7/9/2026","LIT","Global X Lithium & Battery Tech ETF
+CUSIP: 37954Y855
+Dividend Reinvestment","Buy","0.000278","$71.72","($0.02)"
+"7/7/2026","7/7/2026","7/7/2026","LIT","Cash Div: R/D 2026-06-29 P/D 2026-07-07 - 0.074507 shares at 0.324862","CDIV","","","$0.02"
+"7/1/2026","7/1/2026","7/2/2026","NURE","Nuveen Short-Term REIT ETF
+CUSIP: 67092P706
+Dividend Reinvestment","Buy","0.000616","$32.45","($0.02)"
+"7/1/2026","7/1/2026","7/2/2026","SPXL","Direxion Daily S&P 500 Bull 3x ETF
+CUSIP: 25459W862
+Dividend Reinvestment","Buy","0.000037","$269.85","($0.01)"
+"7/1/2026","7/1/2026","7/2/2026","VOO","Vanguard S&P 500 ETF
+CUSIP: 922908363
+Dividend Reinvestment","Buy","0.007392","$684.45","($5.06)"
+"7/1/2026","7/1/2026","7/2/2026","","ACH Deposit","ACH","","","$100.00"
