@@ -1,63 +1,114 @@
 # HomeLedger
 
-Private, single-user budgeting that runs entirely on your Windows machine via Docker.
+[![License: MIT](https://img.shields.io/badge/License-MIT-teal.svg)](LICENSE)
+[![Self-hosted](https://img.shields.io/badge/self--hosted-Docker-blue)](docker-compose.yml)
+[![Stack](https://img.shields.io/badge/stack-Next.js%2015%20%2B%20Postgres-black)](package.json)
 
-**HomeLedger** keeps your statements, balances, budgets, and goals on local Postgres. No Neon, Plaid, Clerk, or cloud AI — just Docker Desktop and a PIN.
+**HomeLedger** is a private, self-hosted personal finance app. Your statements, balances, budgets, goals, and plans live on your own machine — no Plaid, no cloud accounts, no subscription.
 
-## Quick start (Windows)
+Connect to [SimpleFIN Bridge](https://bridge.simplefin.org/) for automatic bank sync (~$1.50/mo), or import CSV/OFX/PDF files from any bank.
 
-1. Install [Docker Desktop](https://www.docker.com/products/docker-desktop/) and ensure it is running.
-2. Clone this repo and open a terminal in the project folder.
-3. Copy env and start:
+---
 
-```powershell
-copy .env.example .env
+## Features
+
+| Area | What you get |
+|------|-------------|
+| **Accounts** | Checking, savings, credit, investment, loan — grouped by type, net worth on the home page |
+| **Import** | CSV · OFX/QFX · PDF · TXT with column mapping, preset detection, dedupe, and one-click undo |
+| **SimpleFIN sync** | Live bank balance + transaction sync for supported institutions |
+| **Categorize** | Queue + "always categorize as" rules — teach it once, it learns |
+| **Spending tracker** | Weekly and monthly views, category/payee breakdowns, donut chart, cumulative chart |
+| **Budgets** | Per-category/month limits, copy-previous, 80% warnings, overspend alerts |
+| **Goals** | Target amounts, suggested contribution, surplus sweep, progress tracking |
+| **Recurring payments** | Define regular bills; auto-applied to the ledger on due date |
+| **Forecast** | 60-day cashflow projection based on income schedule and spending patterns |
+| **Reconciliation** | Compare cleared transactions against your bank statement balance per account |
+| **Net worth chart** | 12-month sparkline on the home dashboard |
+| **Buy planner** | House · car · cash purchase planning tied to your actual spend and liquid assets |
+| **Retire planner** | Monte Carlo retirement projection using your real ledger as the baseline |
+| **Coach tips** | Deterministic rule-based nudges — overspend alerts, goal pacing, surplus sweep |
+| **Chat** | Optional local-only AI assistant via [Ollama](https://ollama.com/) (llama3.2 or similar) |
+| **Security** | PIN + signed JWT session cookie, idle auto-lock, no external auth services |
+
+---
+
+## Quick start
+
+> **Requirements:** [Docker Desktop](https://www.docker.com/products/docker-desktop/) running on your machine.
+
+```bash
+# 1. Clone and enter the project
+git clone https://github.com/daniel-damiani/homeledger.git
+cd homeledger
+
+# 2. Create your env file (edit APP_PIN and SESSION_SECRET)
+cp .env.example .env   # Windows: copy .env.example .env
+
+# 3. Start the app
 docker compose up --build
 ```
 
-4. Open **http://127.0.0.1:3000**
-5. Unlock with PIN `1234` (change it under Settings).
-6. Create an account → **Import** → upload `fixtures/sample-chase.csv`.
+Open **http://localhost:3000**, unlock with your PIN (default `1234` — change it in Settings), then:
 
-Stop with `Ctrl+C` or `docker compose down`. Data stays in the Docker volume `homeledger_pg`.
+1. Create an account under **Accounts**
+2. Import → upload `fixtures/sample-chase.csv` to explore with sample data
+3. Connect SimpleFIN under **Settings → SimpleFIN** for live sync
+
+**Stop:** `Ctrl+C` or `docker compose down`. Your data persists in the `homeledger_pg` Docker volume.
 
 ### Dev mode (hot reload)
 
-```powershell
-copy .env.example .env
+```bash
 docker compose -f docker-compose.dev.yml up --build
 ```
 
-`WATCHPACK_POLLING=true` is set for reliable file watching on Windows.
+File changes reflect immediately — no rebuild needed.
 
-## What you get
+---
 
-| Area | Features |
-|------|----------|
-| Unlock | PIN + signed cookie session |
-| Home | Net worth, budget progress, next goal, cashflow, coach tips |
-| Accounts | CRUD, balances, manual transactions |
-| Import | CSV / OFX / QFX / PDF / TXT with preview, presets, dedupe, undo |
-| Categorize | Queue + “always categorize like this” rules |
-| Spending | Month view, category/payee breakdowns, CSV export |
-| Budgets | Per category/month, copy previous, 80%/over warnings |
-| Goals | Targets, suggested contribution, surplus sweep, coach tips |
-| Ops | `/api/health`, backup/restore scripts |
+## Backup and restore
 
-## Backup & restore
+```bash
+# Backup (writes to ./backups/)
+./scripts/backup.sh          # Linux / macOS
+.\scripts\backup.ps1         # Windows
 
-```powershell
-.\scripts\backup.ps1
+# Restore
+./scripts/restore.sh -d ./backups/homeledger-YYYYMMDD-HHMMSS.sql
 .\scripts\restore.ps1 -DumpFile .\backups\homeledger-YYYYMMDD-HHMMSS.sql
 ```
 
-Bash equivalents: `scripts/backup.sh`, `scripts/restore.sh`.
+Never commit backup dumps or real statement files — both are gitignored.
 
-Backups write to `./backups` (gitignored contents). Never commit dumps or real statements.
+---
+
+## Configuration
+
+All settings are in `.env` (copy from `.env.example`):
+
+| Variable | Purpose |
+|---|---|
+| `APP_PIN` | Login PIN (change this) |
+| `SESSION_SECRET` | JWT signing secret — use a long random string |
+| `CURRENCY` | Display currency, e.g. `USD` |
+| `OLLAMA_BASE_URL` | Local Ollama endpoint (optional — only needed for AI chat) |
+| `OLLAMA_MODEL` | Model to use, e.g. `llama3.2` (optional) |
+| `SIMPLEFIN_TOKEN` | Optional — can also be entered via the app UI |
+
+---
+
+## Security notes
+
+- UI binds to `localhost:3000` only by default. Postgres is not published to the host.
+- PIN is bcrypt-hashed in the database — never stored in plaintext.
+- Session expires after 15 minutes of inactivity (configurable).
+- SimpleFIN Access URLs (bearer credentials) are stored in the local Postgres — protect your database.
+- **Do not expose this app to the internet without additional hardening** (HTTPS, authentication proxy, firewall rules).
+
+---
 
 ## Smoke checks
-
-Inside the running web container or with local Node after `npm install`:
 
 ```bash
 npm run typecheck
@@ -65,17 +116,25 @@ npm run build
 npm run smoke:parsers
 ```
 
-## Security notes
+---
 
-- UI binds to `127.0.0.1:3000` only.
-- Postgres is not published to the host.
-- Money data never leaves the machine when you use this stack as documented.
-- Change `APP_PIN` and `SESSION_SECRET` in `.env`.
+## Contributing
 
-## Docs for agents
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
-See [AGENTS.md](./AGENTS.md) and [SPEC.md](./SPEC.md).
+---
 
-## Out of scope
+## Roadmap
 
-Multi-user SaaS, public hosting, Plaid, cloud databases, native mobile, trading, paid AI.
+- Account-level cleared/reconciliation ✓ (shipped)
+- Net worth chart ✓ (shipped)
+- Split transactions (one receipt → multiple categories)
+- Transaction tags
+- Mobile companion app (API is already JSON; bearer token auth needed)
+- Optional hosted tier for non-technical users
+
+---
+
+## License
+
+[MIT](LICENSE) — free to use, modify, and self-host.

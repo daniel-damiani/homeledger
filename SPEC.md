@@ -50,6 +50,17 @@ Presets: generic, chase, amex, capital-one, bank-of-america.
 4. Budgets/goals/coach usable
 5. `.\scripts\backup.ps1` produces a dump under `./backups`
 
-## Out of scope
+## Shipped
 
-Multi-user SaaS, public hosting, Plaid, cloud DB, native mobile, trading, paid AI.
+- Account reconciliation (cleared flag + per-account reconcile flow)
+- Net worth 12-month sparkline on home dashboard
+- Buy planner (house / car / cash) tied to real ledger spend
+- Retire planner (Monte Carlo) using actual ledger baseline
+- Forecast (60-day cashflow from income schedule)
+
+## Roadmap
+
+- Split transactions (one receipt → multiple categories)
+- Transaction tags
+- Bearer token auth (enables mobile companion app)
+- Optional hosted tier for non-technical users
