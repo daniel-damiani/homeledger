@@ -18,6 +18,10 @@
   --font-display: "Fraunces", Georgia, serif;
   --font-body: "Source Sans 3", system-ui, sans-serif;
   --shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
+  /* aliases — tracker/forecast were built with these names */
+  --border: rgba(232, 240, 242, 0.12);
+  --accent: #2ec4b6;
+  --fg: #e8f0f2;
 }
 
 * {
@@ -105,9 +109,14 @@ h3,
   padding: 0.25rem 0;
 }
 
-.nav-links a:hover,
+.nav-links a:hover {
+  color: var(--teal);
+}
+
 .nav-links a.active {
   color: var(--teal);
+  border-bottom: 2px solid var(--teal);
+  padding-bottom: 0.1rem;
 }
 
 .hero-brand {
@@ -194,6 +203,30 @@ h3,
   color: var(--ink);
 }
 
+.btn.secondary:hover {
+  background: var(--surface-strong);
+  border-color: var(--teal-dim);
+  color: var(--ink);
+}
+
+.btn-ghost {
+  appearance: none;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 0.4rem 0.65rem;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+
+.btn-ghost:hover {
+  color: var(--ink);
+  background: var(--surface-strong);
+}
+
 .btn.danger {
   background: transparent;
   border-color: var(--rose);
@@ -236,6 +269,33 @@ h3,
   border-color: var(--teal-dim);
 }
 
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.form-group label {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.form-group input,
+.form-group select {
+  font: inherit;
+  color: var(--ink);
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.55rem 0.7rem;
+}
+
+.form-group input:focus,
+.form-group select:focus {
+  outline: 2px solid rgba(46, 196, 182, 0.35);
+  border-color: var(--teal-dim);
+}
+
 .table-wrap {
   overflow-x: auto;
 }
@@ -257,6 +317,10 @@ table.data td {
 table.data th {
   color: var(--muted);
   font-weight: 600;
+}
+
+table.data tbody tr:hover {
+  background: var(--surface-strong);
 }
 
 .amount.neg {
@@ -1297,8 +1361,9 @@ table.data th {
 }
 .forecast-account-card:hover { border-color: var(--accent); }
 .forecast-account-card.selected {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 10%, var(--surface-strong));
+  border-color: var(--teal);
+  background: color-mix(in srgb, var(--teal) 10%, var(--surface-strong));
+  box-shadow: 0 0 0 3px rgba(46, 196, 182, 0.18);
 }
 .forecast-account-name  { font-size: 0.9rem; font-weight: 600; }
 .forecast-account-balance { font-size: 1.05rem; font-weight: 700; margin-top: 0.2rem; }
@@ -1865,4 +1930,200 @@ button.month-payee-row.drillable:hover {
   .retire-hero {
     justify-content: center;
   }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Net worth chart
+═══════════════════════════════════════════════════════════ */
+
+.nw-chart-wrap {
+  margin-top: 0.75rem;
+}
+
+.nw-chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.25rem;
+}
+
+.nw-chart-change {
+  font-size: 0.82rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.nw-chart-change.pos { color: var(--ok); }
+.nw-chart-change.neg { color: var(--rose); }
+
+.nw-chart-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  overflow: visible;
+}
+
+.nw-area {
+  fill: rgba(46, 196, 182, 0.15);
+}
+
+.nw-line {
+  fill: none;
+  stroke: var(--teal);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.nw-label {
+  fill: var(--muted);
+  font-size: 9px;
+  font-family: var(--font-body);
+}
+
+.nw-dot {
+  fill: var(--teal);
+}
+
+.nw-dot-end {
+  fill: var(--teal);
+  stroke: var(--bg-1);
+  stroke-width: 1.5;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Reconcile panel
+═══════════════════════════════════════════════════════════ */
+
+.reconcile-panel {
+  margin-top: 0.75rem;
+  padding: 0.85rem 1rem;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.reconcile-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.reconcile-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-bottom: 0.75rem;
+}
+
+.reconcile-label {
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.reconcile-input {
+  font: inherit;
+  color: var(--ink);
+  background: var(--bg-1);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.45rem 0.65rem;
+  width: 10rem;
+}
+
+.reconcile-input:focus {
+  outline: 2px solid rgba(46, 196, 182, 0.35);
+  border-color: var(--teal-dim);
+}
+
+.reconcile-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.88rem;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.reconcile-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.reconcile-diff {
+  margin-top: 0.15rem;
+  padding-top: 0.3rem;
+  border-top: 1px solid var(--line);
+}
+
+.reconcile-diff.balanced strong {
+  color: var(--ok);
+}
+
+.reconcile-hint {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin: 0 0 0.5rem;
+}
+
+.reconcile-txns {
+  max-height: 18rem;
+  overflow-y: auto;
+}
+
+.reconcile-txn-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.reconcile-txn {
+  display: grid;
+  grid-template-columns: 1.2rem 6rem 1fr auto;
+  gap: 0.5rem;
+  align-items: center;
+  width: 100%;
+  font: inherit;
+  font-size: 0.83rem;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  padding: 0.35rem 0.4rem;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.reconcile-txn:hover {
+  background: var(--surface-strong);
+}
+
+.reconcile-txn.cleared {
+  opacity: 0.55;
+}
+
+.reconcile-txn-check {
+  color: var(--teal);
+  font-size: 0.9rem;
+}
+
+.reconcile-txn-date {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.reconcile-txn-payee {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reconcile-txn-amt {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
 }

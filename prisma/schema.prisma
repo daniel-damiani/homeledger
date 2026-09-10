@@ -106,6 +106,8 @@ model Transaction {
   /** When set, this bank/checking txn already has a paired loan principal reduction. */
   loanMirrorId String?      @unique
   pending      Boolean      @default(false)
+  /** Marked cleared during reconciliation — confirmed against the bank statement. */
+  cleared      Boolean      @default(false)
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 

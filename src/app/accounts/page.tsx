@@ -5,6 +5,7 @@ import { AccountDownloadLink } from "@/components/AccountDownloadLink";
 import { SimpleFINSyncButton } from "@/components/SimpleFINSyncButton";
 import { SimpleFINSyncAllButton } from "@/components/SimpleFINSyncAllButton";
 import { DeleteAccountButton } from "@/components/DeleteAccountButton";
+import { ReconcileButton } from "@/components/ReconcileButton";
 import { listAccounts } from "@/lib/accounts";
 import { applyDueRecurringPayments } from "@/lib/recurring";
 
@@ -108,6 +109,7 @@ export default async function AccountsPage() {
                 ) : (
                   <AccountDownloadLink accountId={a.id} initialUrl={a.downloadUrl ?? null} />
                 )}
+                <ReconcileButton accountId={a.id} accountBalanceCents={a.balanceCents} />
               </section>
             ))}
           </div>

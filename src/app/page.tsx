@@ -3,6 +3,7 @@ import { AppNav } from "@/components/AppNav";
 import { Money } from "@/components/Money";
 import { ProgressBar } from "@/components/ProgressBar";
 import { CoachPanel } from "@/components/CoachPanel";
+import { NetWorthChart } from "@/components/NetWorthChart";
 import { getNetWorthCents, listAccounts } from "@/lib/accounts";
 import { buildCoachTips } from "@/lib/coaching";
 import { prisma } from "@/lib/db";
@@ -79,6 +80,7 @@ export default async function HomePage() {
                 <Money cents={netWorth} />
               </div>
               <p className="stat muted">{accounts.length} open accounts</p>
+              <NetWorthChart />
             </section>
             <section className="panel">
               <h3>This month vs budget</h3>
