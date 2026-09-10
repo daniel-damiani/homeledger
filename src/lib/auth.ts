@@ -4,7 +4,9 @@ import bcrypt from "bcryptjs";
 import { prisma } from "./db";
 
 export const SESSION_COOKIE = "hl_session";
-const SESSION_TTL = "7d";
+/** Sliding session length; cookie is session-scoped so quitting the browser usually locks. */
+export const IDLE_LOCK_MINUTES = 15;
+const SESSION_TTL = `${IDLE_LOCK_MINUTES}m`;
 
 function secretKey() {
   const secret = process.env.SESSION_SECRET;
@@ -79,10 +81,10 @@ export async function setPin(newPin: string): Promise<void> {
   });
 }
 
+/** Session cookie: no maxAge, so it dies when the browser session ends. */
 export const sessionCookieOptions = {
   httpOnly: true,
   sameSite: "lax" as const,
   secure: false,
   path: "/",
-  maxAge: 60 * 60 * 24 * 7,
 };

@@ -30,6 +30,13 @@ enum AccountType {
   OTHER
 }
 
+enum TaxBucket {
+  TRADITIONAL
+  ROTH
+  TAXABLE
+  UNKNOWN
+}
+
 model Account {
   id           String        @id @default(cuid())
   name         String
@@ -45,6 +52,8 @@ model Account {
   simpleFinLastSyncAt      DateTime?
   /** Available balance as reported by SimpleFIN (may differ from posted balance). */
   availableBalanceCents    Int?
+  /** Tax treatment for retirement projections. UNKNOWN infers from the account name. */
+  taxBucket    TaxBucket     @default(UNKNOWN)
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
   transactions Transaction[]
@@ -184,4 +193,81 @@ model LoanLinkRule {
   createdAt     DateTime @default(now())
 
   @@index([pattern])
+}
+
+/** Singleton retirement-planning assumptions (id = 1). */
+model RetirementProfile {
+  id                       Int      @id @default(1)
+  birthYear                Int?
+  retireAge                Int      @default(65)
+  longevityAge             Int      @default(95)
+  /** Social Security at full retirement age (67), monthly. */
+  ssFraMonthlyCents        Int      @default(0)
+  /** Claiming age: typically 62, 67, or 70. */
+  ssClaimAge               Int      @default(67)
+  /** Null = use trailing-12-month tracker spend. */
+  desiredAnnualSpendCents  Int?
+  stockPct                 Int      @default(70)
+  glidePath                Boolean  @default(false)
+  includeSavings           Boolean  @default(false)
+  extraMonthlySaveCents    Int      @default(0)
+  stockReturnPct           Float    @default(7)
+  bondReturnPct            Float    @default(4)
+  inflationPct             Float    @default(2.5)
+  traditionalTaxHaircutPct Int      @default(15)
+  updatedAt                DateTime @updatedAt
+}
+
+enum PurchaseKind {
+  HOUSE
+  CAR
+  CASH
+}
+
+/** Singleton big-purchase planner (id = 1). */
+model PurchasePlan {
+  id                      Int          @id @default(1)
+  kind                    PurchaseKind @default(HOUSE)
+  extraMonthlySaveCents   Int          @default(0)
+  /** Monthly amount the user plans to put toward the purchase. Null = not set yet. */
+  plannedMonthlySaveCents Int?
+  extraIncomeCents        Int          @default(0)
+  /** Null = use trailing ledger income for the selected lookback. Replaces inferred income when set. */
+  incomeOverrideCents     Int?
+  otherDebtMonthlyCents   Int          @default(0)
+  replaceHousing          Boolean      @default(true)
+  emergencyMonths         Float        @default(3)
+  /** Months of transactions to average for income, spend, housing, surplus. */
+  lookbackMonths          Int          @default(12)
+  /** One-time cash not in checking/savings (home-sale proceeds, gift, etc.). */
+  otherCashCents          Int          @default(0)
+  /** Pre-tax household income for DTI. Null = DTI not computed. */
+  grossAnnualIncomeCents  Int?
+
+  housePriceCents         Int          @default(40000000)
+  downPct                 Float        @default(20)
+  mortgageRatePct         Float        @default(6.5)
+  mortgageTermYears       Int          @default(30)
+  propertyTaxPct          Float        @default(1)
+  insuranceAnnualCents    Int          @default(150000)
+  hoaMonthlyCents         Int          @default(0)
+  pmiAnnualPct            Float        @default(0.5)
+  maintenancePct          Float        @default(1)
+  closingCostPct          Float        @default(3)
+  /** Null = closingCostPct of price. Dollar quote when set. */
+  closingCostOverrideCents Int?
+
+  carPriceCents           Int          @default(3000000)
+  carTaxPct               Float        @default(6)
+  carFeesCents            Int          @default(50000)
+  carDownPct              Float        @default(10)
+  carRatePct              Float        @default(7)
+  carTermMonths           Int          @default(60)
+  carInsuranceMonthlyCents Int         @default(15000)
+
+  cashTargetCents         Int          @default(1000000)
+  /** Null = use liquid cash minus emergency floor. */
+  cashSavedOverrideCents  Int?
+
+  updatedAt               DateTime     @updatedAt
 }

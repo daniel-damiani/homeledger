@@ -1,6 +1,6 @@
 import { AppNav } from "@/components/AppNav";
 import { PinChangeForm } from "@/components/PinChangeForm";
-import { ensureSettings } from "@/lib/auth";
+import { ensureSettings, IDLE_LOCK_MINUTES } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +17,17 @@ export default async function SettingsPage() {
       </p>
       <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
         <PinChangeForm />
+        <section className="panel">
+          <h2>Session lock</h2>
+          <p>
+            The app locks after <strong>{IDLE_LOCK_MINUTES} minutes</strong> of inactivity, and when you
+            quit the browser (session cookie). Use Lock in the header anytime.
+          </p>
+          <p className="stat muted">
+            Chrome “Continue where you left off” can restore a session cookie; the{" "}
+            {IDLE_LOCK_MINUTES}-minute timer still applies if you were away longer than that.
+          </p>
+        </section>
         <section className="panel">
           <h2>Ops</h2>
           <ul>

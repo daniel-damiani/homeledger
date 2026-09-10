@@ -59,9 +59,11 @@ HomeLedger concepts:
 - CREDIT/LOAN balances are liabilities (debt). Net worth subtracts |debt|.
 - Transactions: expenses are negative; income positive.
 - Imports: CSV/OFX/QFX with dedupe. Categorize with rules. Loan payments from checking should use Apply to loan (not double recurring).
-- Budgets, goals, Tracker (monthly surplus vs savings goal), and a deterministic coach also exist in the UI.
+- Budgets, goals, Tracker (monthly surplus vs savings goal), a cash Forecast, a Retire tab, and a Buy tab (house/car/cash plan) also exist in the UI.
 
 Use tools to answer questions about THIS user's data. Prefer tools over guessing amounts.
+For retirement / “am I on track to retire?”, call get_retirement_plan — never invent a success % or nest egg.
+For buying a house/car or “when can I afford X?”, call get_purchase_plan — never invent a payment or date.
 Be concise. Quote dollar amounts clearly. If a tool returns empty results, say so.
 Do not invent account balances or transactions.`;
 }
@@ -168,6 +170,56 @@ export function buildChatTools(now = new Date()): OllamaTool[] {
     {
       type: "function",
       function: {
+        name: "get_retirement_plan",
+        description:
+          "Run HomeLedger’s local retirement engine (Monte Carlo). Returns success %, nest egg, coast-FIRE, earliest age, extra $/mo to hit 90%. Use this instead of guessing retirement numbers. Optional overrides: retireAge, extraMonthlySave (dollars), annualSpend (dollars), ssClaimAge (62–70).",
+        parameters: {
+          type: "object",
+          properties: {
+            retireAge: { type: "number", description: "Target retirement age override" },
+            extraMonthlySave: {
+              type: "number",
+              description: "Extra monthly savings in dollars on top of the ledger rate",
+            },
+            annualSpend: {
+              type: "number",
+              description: "Desired annual retirement spend in dollars",
+            },
+            ssClaimAge: {
+              type: "number",
+              description: "Social Security claiming age 62–70",
+            },
+          },
+          additionalProperties: false,
+        },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "get_purchase_plan",
+        description:
+          "Run HomeLedger’s local house/car/cash purchase planner. Returns payment, cash to close, months to save, DTI. Use instead of guessing. Optional kind: HOUSE, CAR, or CASH.",
+        parameters: {
+          type: "object",
+          properties: {
+            kind: {
+              type: "string",
+              enum: ["HOUSE", "CAR", "CASH"],
+              description: "Purchase type override",
+            },
+            extraMonthlySave: {
+              type: "number",
+              description: "Monthly dollars planned toward the purchase (not added on top of surplus)",
+            },
+          },
+          additionalProperties: false,
+        },
+      },
+    },
+    {
+      type: "function",
+      function: {
         name: "app_help",
         description:
           "Explain how HomeLedger features work (import, categorize, loans, budgets, tracker, etc.).",
@@ -177,7 +229,7 @@ export function buildChatTools(now = new Date()): OllamaTool[] {
             topic: {
               type: "string",
               description:
-                "Optional focus: import, categorize, loans, budgets, recurring, net_worth, transactions, tracker",
+                "Optional focus: import, categorize, loans, budgets, recurring, net_worth, transactions, tracker, retire, buy",
             },
           },
           additionalProperties: false,
@@ -213,6 +265,10 @@ function helpText(topic?: string): string {
       "Transactions tab filters by date, account, payee, amount. Apply to loan lives there.",
     tracker:
       "Tracker shows monthly surplus (income − spending, transfers excluded) vs the monthly savings goal set on Goals, plus category/account breakdowns.",
+    retire:
+      "Retire tab prefills nest egg, spend, and saving from the ledger and runs a local Monte Carlo. Chat can call get_retirement_plan for the same numbers.",
+    buy:
+      "Buy tab plans a house, car, or cash goal from ledger income, spend, and liquid cash. Other cash (home-sale proceeds, gifts) can be typed in because HomeLedger does not know home equity. You can shorten the lookback (e.g. 3 months) if imports do not go back a year. Chat can call get_purchase_plan.",
   };
   if (!topic) return Object.values(all).join("\n\n");
   const key = topic.toLowerCase().replace(/\s+/g, "_");
@@ -342,6 +398,40 @@ export async function runChatTool(
       return {
         help: helpText(typeof args.topic === "string" ? args.topic : undefined),
       };
+    }
+    case "get_retirement_plan": {
+      const { compactAdvicePayload, computeRetirementPlan } = await import("./retirement");
+      const overrides: {
+        retireAge?: number;
+        extraMonthlySaveCents?: number;
+        annualSpendCents?: number;
+        ssClaimAge?: number;
+      } = {};
+      if (typeof args.retireAge === "number") overrides.retireAge = args.retireAge;
+      if (typeof args.extraMonthlySave === "number") {
+        overrides.extraMonthlySaveCents = Math.round(args.extraMonthlySave * 100);
+      }
+      if (typeof args.annualSpend === "number") {
+        overrides.annualSpendCents = Math.round(args.annualSpend * 100);
+      }
+      if (typeof args.ssClaimAge === "number") overrides.ssClaimAge = args.ssClaimAge;
+      const out = await computeRetirementPlan(overrides);
+      if (!out.result) {
+        return { error: out.error || "Set a birth year on the Retire tab first." };
+      }
+      return compactAdvicePayload(out.result);
+    }
+    case "get_purchase_plan": {
+      const { compactPurchaseAdvice, computePurchasePlan, isPurchaseKind } = await import(
+        "./purchase"
+      );
+      const overrides: { kind?: "HOUSE" | "CAR" | "CASH"; plannedMonthlySaveCents?: number } = {};
+      if (isPurchaseKind(args.kind)) overrides.kind = args.kind;
+      if (typeof args.extraMonthlySave === "number") {
+        overrides.plannedMonthlySaveCents = Math.round(args.extraMonthlySave * 100);
+      }
+      const out = await computePurchasePlan(overrides);
+      return compactPurchaseAdvice(out.result);
     }
     default:
       return { error: `Unknown tool: ${name}` };
