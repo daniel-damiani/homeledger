@@ -9,6 +9,7 @@ import { StatRing } from "@/components/tracker/StatRing";
 import { WeekInReview } from "@/components/tracker/WeekInReview";
 import { MonthInReview } from "@/components/tracker/MonthInReview";
 import { TxnDrilldownProvider } from "@/components/tracker/TxnDrilldown";
+import { YearlyBudgetBars } from "@/components/tracker/YearlyBudgetBars";
 import { ensureSettings } from "@/lib/auth";
 import { formatMonthKey, monthBounds, shiftMonthKey } from "@/lib/money";
 import { getTrackerSnapshot, getTrackerYtdSnapshot } from "@/lib/tracker";
@@ -297,6 +298,16 @@ export default async function TrackerPage({
               match="category"
             />
           </div>
+
+          {isYtd ? (
+            <YearlyBudgetBars
+              rows={snap.yearlyBudgets}
+              elapsedMonths={y < currentYear ? 12 : now.getMonth() + 1}
+              from={periodFrom}
+              to={periodTo}
+              year={y}
+            />
+          ) : null}
 
           <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", gap: "1rem", marginTop: "1rem" }}>
             <CategoryBars

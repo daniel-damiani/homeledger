@@ -73,10 +73,11 @@ model Category {
   sortOrder    Int            @default(0)
   createdAt    DateTime       @default(now())
   transactions Transaction[]
-  rules        CategoryRule[]
-  budgets      Budget[]
-  recurring    RecurringPayment[]
-  loanLinks    LoanLinkRule[]
+  rules          CategoryRule[]
+  budgets        Budget[]
+  yearlyBudgets  YearlyBudget[]
+  recurring      RecurringPayment[]
+  loanLinks      LoanLinkRule[]
 }
 
 model CategoryRule {
@@ -128,6 +129,19 @@ model Budget {
 
   @@unique([categoryId, month])
   @@index([month])
+}
+
+model YearlyBudget {
+  id           String   @id @default(cuid())
+  categoryId   String
+  category     Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  year         Int
+  limitCents   Int
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([categoryId, year])
+  @@index([year])
 }
 
 enum GoalStatus {

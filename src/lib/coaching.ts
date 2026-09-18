@@ -1,5 +1,6 @@
 import { prisma } from "./db";
-import { formatMonthKey, monthBounds } from "./money";
+import { formatMonthKey, monthBounds, ytdBounds } from "./money";
+import { classifyTrackerFlow } from "./tracker";
 
 export type CoachTip = {
   id: string;
@@ -42,6 +43,51 @@ export async function buildCoachTips(month = formatMonthKey()): Promise<CoachTip
         title: `Approaching limit: ${b.category.name}`,
         body: `${Math.round(ratio * 100)}% of your $${(b.limitCents / 100).toFixed(0)} budget is used.`,
       });
+    }
+  }
+
+  const year = Number(month.slice(0, 4)) || new Date().getFullYear();
+  const ytd = ytdBounds(year);
+  const yearlyBudgets = await prisma.yearlyBudget.findMany({
+    where: { year },
+    include: { category: true },
+  });
+  if (yearlyBudgets.length > 0) {
+    const yearlyTxns = await prisma.transaction.findMany({
+      where: {
+        date: { gte: ytd.start, lte: ytd.end },
+        categoryId: { in: yearlyBudgets.map((b) => b.categoryId) },
+      },
+      include: { category: true },
+    });
+    const yearlySpent = new Map<string, number>();
+    for (const t of yearlyTxns) {
+      if (!t.categoryId) continue;
+      const flow = classifyTrackerFlow(t.amountCents, t.category);
+      if (flow === "spend") {
+        yearlySpent.set(t.categoryId, (yearlySpent.get(t.categoryId) ?? 0) + Math.abs(t.amountCents));
+      } else if (flow === "reimburse") {
+        yearlySpent.set(t.categoryId, (yearlySpent.get(t.categoryId) ?? 0) - t.amountCents);
+      }
+    }
+    for (const b of yearlyBudgets) {
+      const spent = Math.max(0, yearlySpent.get(b.categoryId) ?? 0);
+      const ratio = b.limitCents > 0 ? spent / b.limitCents : 0;
+      if (ratio >= 1) {
+        tips.push({
+          id: `overspend-year-${b.id}`,
+          severity: "warn",
+          title: `Over yearly budget: ${b.category.name}`,
+          body: `You've spent ${Math.round(ratio * 100)}% of this year's $${(b.limitCents / 100).toFixed(0)} limit.`,
+        });
+      } else if (ratio >= 0.8) {
+        tips.push({
+          id: `warn-year-${b.id}`,
+          severity: "warn",
+          title: `Approaching yearly limit: ${b.category.name}`,
+          body: `${Math.round(ratio * 100)}% of your $${(b.limitCents / 100).toFixed(0)} yearly budget is used.`,
+        });
+      }
     }
   }
 

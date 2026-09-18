@@ -4,12 +4,20 @@ import { ensureReimbursementSetup } from "./categories";
 
 export type NamedAmount = { name: string; cents: number };
 
+export type YearlyBudgetProgress = {
+  name: string;
+  limitCents: number;
+  spentCents: number;
+};
+
 export type TrackerSnapshot = {
   label: string;
   isYtd: boolean;
   goalCents: number;
   /** Monthly target × months elapsed (YTD pace target). 0 in month view. */
   ytdGoalCents: number;
+  /** Category yearly budgets vs YTD spend. Empty in month view. */
+  yearlyBudgets: YearlyBudgetProgress[];
   incomeCents: number;
   expenseCents: number;
   surplusCents: number;
@@ -224,6 +232,7 @@ export async function getTrackerSnapshot(month = formatMonthKey()): Promise<Trac
     isYtd: false,
     goalCents,
     ytdGoalCents: 0,
+    yearlyBudgets: [],
     incomeCents,
     expenseCents,
     surplusCents,
@@ -305,11 +314,23 @@ export async function getTrackerYtdSnapshot(year: number, now = new Date()): Pro
       .filter((r) => r.cents !== 0)
       .sort((a, b) => b.cents - a.cents);
 
+  const yearlyRows = await prisma.yearlyBudget.findMany({
+    where: { year },
+    include: { category: true },
+    orderBy: { category: { name: "asc" } },
+  });
+  const yearlyBudgets: YearlyBudgetProgress[] = yearlyRows.map((b) => ({
+    name: b.category.name,
+    limitCents: b.limitCents,
+    spentCents: Math.max(0, byCategoryMap.get(b.category.name) ?? 0),
+  }));
+
   return {
     label: `${year} YTD`,
     isYtd: true,
     goalCents,
     ytdGoalCents,
+    yearlyBudgets,
     incomeCents: totalIncome,
     expenseCents: totalExpense,
     surplusCents,

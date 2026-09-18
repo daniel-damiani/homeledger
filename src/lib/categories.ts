@@ -14,7 +14,7 @@ export async function listCategories() {
   return prisma.category.findMany({
     orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
     include: {
-      _count: { select: { transactions: true, rules: true, budgets: true } },
+      _count: { select: { transactions: true, rules: true, budgets: true, yearlyBudgets: true } },
     },
   });
 }
@@ -109,6 +109,7 @@ export async function deleteCategory(id: string) {
     }),
     prisma.categoryRule.deleteMany({ where: { categoryId: id } }),
     prisma.budget.deleteMany({ where: { categoryId: id } }),
+    prisma.yearlyBudget.deleteMany({ where: { categoryId: id } }),
     prisma.category.delete({ where: { id } }),
   ]);
 

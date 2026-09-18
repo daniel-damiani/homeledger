@@ -1,7 +1,8 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "./db";
 import { getNetWorthCents, listAccounts } from "./accounts";
-import { formatMonthKey, monthBounds } from "./money";
+import { formatMonthKey, monthBounds, ytdBounds } from "./money";
+import { classifyTrackerFlow } from "./tracker";
 
 export type OllamaTool = {
   type: "function";
@@ -146,13 +147,17 @@ export function buildChatTools(now = new Date()): OllamaTool[] {
       type: "function",
       function: {
         name: "list_budgets",
-        description: `List budget limits and spent amounts for a month. Last month = ${lastMonth}.`,
+        description: `List budget limits and spent amounts. Pass month (YYYY-MM) for monthly budgets, or year (YYYY) for yearly budgets. Last month = ${lastMonth}.`,
         parameters: {
           type: "object",
           properties: {
             month: {
               type: "string",
-              description: `YYYY-MM (defaults to ${currentMonth})`,
+              description: `YYYY-MM (defaults to ${currentMonth} if year is omitted)`,
+            },
+            year: {
+              type: "number",
+              description: "Calendar year for yearly category budgets (YTD spend vs annual limit)",
             },
           },
           additionalProperties: false,
@@ -256,7 +261,7 @@ function helpText(topic?: string): string {
     loans:
       "Create a LOAN account (balance = amount owed). Import checking CSVs for bank debits. On Transactions, use Apply to loan on a payment — optionally Always for this payee. Do not also recurring-debit checking for the same payment.",
     budgets:
-      "Budgets page: set a category limit for a month; checkbox applies through December. Copy previous month available.",
+      "Budgets page: Month tab sets a category limit for a month (checkbox applies through December; copy previous month). Year tab sets an annual category cap; YTD spend vs that cap shows on Tracker YTD.",
     recurring:
       "Recurring autopay on Accounts posts fixed monthly amounts. Prefer loan-only recurring if checking already imports the payment.",
     net_worth:
@@ -264,7 +269,7 @@ function helpText(topic?: string): string {
     transactions:
       "Transactions tab filters by date, account, payee, amount. Apply to loan lives there.",
     tracker:
-      "Tracker shows monthly surplus (income − spending, transfers excluded) vs the monthly savings goal set on Goals, plus category/account breakdowns.",
+      "Tracker shows monthly surplus (income − spending, transfers excluded) vs the monthly savings goal set on Goals, plus category/account breakdowns. YTD view also shows yearly category budgets vs year-to-date spend.",
     retire:
       "Retire tab prefills nest egg, spend, and saving from the ledger and runs a local Monte Carlo. Chat can call get_retirement_plan for the same numbers.",
     buy:
@@ -355,6 +360,44 @@ export async function runChatTool(
       };
     }
     case "list_budgets": {
+      const yearArg = typeof args.year === "number" ? args.year : Number(args.year);
+      if (Number.isInteger(yearArg) && yearArg >= 2000 && yearArg <= 2100) {
+        const { start, end } = ytdBounds(yearArg);
+        const yearly = await prisma.yearlyBudget.findMany({
+          where: { year: yearArg },
+          include: { category: true },
+        });
+        const txns = await prisma.transaction.findMany({
+          where: {
+            date: { gte: start, lte: end },
+            categoryId: { in: yearly.map((b) => b.categoryId) },
+          },
+          include: { category: true },
+        });
+        const spentMap = new Map<string, number>();
+        for (const t of txns) {
+          if (!t.categoryId) continue;
+          const flow = classifyTrackerFlow(t.amountCents, t.category);
+          if (flow === "spend") {
+            spentMap.set(t.categoryId, (spentMap.get(t.categoryId) ?? 0) + Math.abs(t.amountCents));
+          } else if (flow === "reimburse") {
+            spentMap.set(t.categoryId, (spentMap.get(t.categoryId) ?? 0) - t.amountCents);
+          }
+        }
+        return {
+          year: yearArg,
+          period: "ytd",
+          budgets: yearly.map((b) => {
+            const spent = Math.max(0, spentMap.get(b.categoryId) ?? 0);
+            return {
+              category: b.category.name,
+              limit: dollars(b.limitCents),
+              spent: dollars(spent),
+              remaining: dollars(b.limitCents - spent),
+            };
+          }),
+        };
+      }
       const month =
         typeof args.month === "string" && /^\d{4}-\d{2}$/.test(args.month)
           ? args.month

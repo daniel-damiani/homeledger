@@ -10,7 +10,7 @@ export type CategoryRow = {
   isIncome: boolean;
   isTransfer: boolean;
   sortOrder: number;
-  _count: { transactions: number; rules: number; budgets: number };
+  _count: { transactions: number; rules: number; budgets: number; yearlyBudgets: number };
 };
 
 export function CategoryManager({ initial }: { initial: CategoryRow[] }) {
@@ -287,7 +287,7 @@ export function CategoryManager({ initial }: { initial: CategoryRow[] }) {
                     </td>
                     <td className="stat muted">
                       {c._count.transactions} txn · {c._count.rules} rules ·{" "}
-                      {c._count.budgets} budgets
+                      {c._count.budgets + c._count.yearlyBudgets} budgets
                     </td>
                     <td>
                       <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>

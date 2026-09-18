@@ -105,6 +105,21 @@ export function monthBounds(month: string): { start: Date; end: Date } {
   return { start, end };
 }
 
+export function yearBounds(year: number): { start: Date; end: Date } {
+  const start = new Date(Date.UTC(year, 0, 1, 0, 0, 0));
+  const end = new Date(Date.UTC(year, 11, 31, 23, 59, 59, 999));
+  return { start, end };
+}
+
+/** Jan 1 through the end of the current month (full year if `year` is in the past). */
+export function ytdBounds(year: number, now = new Date()): { start: Date; end: Date } {
+  const start = new Date(Date.UTC(year, 0, 1, 0, 0, 0));
+  const currentYear = now.getFullYear();
+  if (year < currentYear) return yearBounds(year);
+  if (year > currentYear) return { start, end: start };
+  return { start, end: monthBounds(formatMonthKey(now)).end };
+}
+
 export function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n));
 }
