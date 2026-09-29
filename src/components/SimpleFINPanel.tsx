@@ -3,6 +3,11 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { formatMoney } from "@/lib/money";
+import { runSync } from "@/components/SimpleFINSyncButton";
+import {
+  PostSyncCategorizeModal,
+  type SyncQueueItem,
+} from "@/components/PostSyncCategorizeModal";
 
 // ---------------------------------------------------------------------------
 // Types (mirror the API response shapes)
@@ -173,6 +178,7 @@ function SyncRow({
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ imported: number; skipped: number } | null>(null);
   const [err, setErr] = useState("");
+  const [categorizeItems, setCategorizeItems] = useState<SyncQueueItem[] | null>(null);
   const router = useRouter();
 
   const linked = sfAcc.linkedAccount!;
@@ -182,27 +188,25 @@ function SyncRow({
     setBusy(true);
     setErr("");
     setResult(null);
+    setCategorizeItems(null);
     try {
-      const res = await fetch("/api/simplefin/sync", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accountId: linked.id }),
-      });
-      const data = await res.json() as { imported?: number; skipped?: number; error?: string; errors?: { msg: string }[] };
-      if (!res.ok) {
-        setErr(data.error ?? "Sync failed");
-      } else {
-        const r = { imported: data.imported ?? 0, skipped: data.skipped ?? 0 };
-        setResult(r);
-        onSynced(r);
-        router.refresh();
+      const r = await runSync({ accountId: linked.id });
+      const summary = { imported: r.imported, skipped: r.skipped };
+      setResult(summary);
+      onSynced(summary);
+      if (r.newTransactions.length > 0) {
+        setCategorizeItems(r.newTransactions);
       }
+      router.refresh();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Sync failed");
     } finally {
       setBusy(false);
     }
   }
 
   return (
+    <>
     <tr>
       <td>
         <strong>{sfAcc.name}</strong>
@@ -228,6 +232,16 @@ function SyncRow({
         <UnlinkButton accountId={linked.id} />
       </td>
     </tr>
+    {categorizeItems !== null && (
+      <PostSyncCategorizeModal
+        items={categorizeItems}
+        onClose={() => {
+          setCategorizeItems(null);
+          router.refresh();
+        }}
+      />
+    )}
+    </>
   );
 }
 

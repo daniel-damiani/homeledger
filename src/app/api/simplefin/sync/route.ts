@@ -154,12 +154,18 @@ export async function POST(req: Request) {
       });
     }
 
+    const newTransactions = (batch?.importedTransactions ?? []).map((t) => ({
+      ...t,
+      accountName: account.name,
+    }));
+
     return NextResponse.json({
       ok: true,
       imported: batch?.importedCount ?? 0,
       skipped: batch?.skippedCount ?? 0,
       chunksUsed,
       balance: sfAccMeta?.balance ?? null,
+      newTransactions,
       // sfErrors are non-fatal warnings from SimpleFIN (e.g. a bank connection lagging)
       sfErrors: errlist,
     });

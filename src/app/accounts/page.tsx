@@ -1,11 +1,8 @@
 import Link from "next/link";
 import { AppNav } from "@/components/AppNav";
 import { Money } from "@/components/Money";
-import { AccountDownloadLink } from "@/components/AccountDownloadLink";
-import { SimpleFINSyncButton } from "@/components/SimpleFINSyncButton";
+import { AccountCard } from "@/components/AccountCard";
 import { SimpleFINSyncAllButton } from "@/components/SimpleFINSyncAllButton";
-import { DeleteAccountButton } from "@/components/DeleteAccountButton";
-import { ReconcileButton } from "@/components/ReconcileButton";
 import { listAccounts } from "@/lib/accounts";
 import { applyDueRecurringPayments } from "@/lib/recurring";
 
@@ -85,32 +82,7 @@ export default async function AccountsPage() {
           </h2>
           <div className="grid cols-3">
             {g.accounts.map((a) => (
-              <section key={a.id} className="panel">
-                <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", alignItems: "flex-start" }}>
-                  <h3 style={{ margin: 0 }}>{a.name}</h3>
-                  <DeleteAccountButton accountId={a.id} accountName={a.name} />
-                </div>
-                <div className="stat">
-                  <Money cents={a.balanceCents} currency={a.currency} />
-                </div>
-                {a.availableBalanceCents != null && a.availableBalanceCents !== a.balanceCents && (
-                  <p className="stat muted" style={{ fontSize: "0.85rem", marginTop: "-0.25rem" }}>
-                    <Money cents={a.availableBalanceCents} currency={a.currency} /> available
-                  </p>
-                )}
-                {a.institution && (
-                  <p className="stat muted" style={{ fontSize: "0.85rem" }}>{a.institution}</p>
-                )}
-                {a.simpleFinId ? (
-                  <SimpleFINSyncButton
-                    accountId={a.id}
-                    lastSyncAt={a.simpleFinLastSyncAt?.toISOString() ?? null}
-                  />
-                ) : (
-                  <AccountDownloadLink accountId={a.id} initialUrl={a.downloadUrl ?? null} />
-                )}
-                <ReconcileButton accountId={a.id} accountBalanceCents={a.balanceCents} />
-              </section>
+              <AccountCard key={a.id} account={a} />
             ))}
           </div>
         </div>
@@ -124,14 +96,7 @@ export default async function AccountsPage() {
           </h2>
           <div className="grid cols-3">
             {archived.map((a) => (
-              <section key={a.id} className="panel" style={{ opacity: 0.6 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", alignItems: "flex-start" }}>
-                  <h3 style={{ margin: 0 }}>{a.name}</h3>
-                  <DeleteAccountButton accountId={a.id} accountName={a.name} />
-                </div>
-                <div className="stat"><Money cents={a.balanceCents} currency={a.currency} /></div>
-                <p className="stat muted" style={{ fontSize: "0.85rem" }}>{a.type}{a.institution ? ` · ${a.institution}` : ""}</p>
-              </section>
+              <AccountCard key={a.id} account={a} archived />
             ))}
           </div>
         </div>

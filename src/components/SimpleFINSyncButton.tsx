@@ -2,6 +2,10 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  PostSyncCategorizeModal,
+  type SyncQueueItem,
+} from "@/components/PostSyncCategorizeModal";
 
 interface Props {
   accountId: string;
@@ -33,6 +37,7 @@ export interface SyncResult {
   chunksUsed: number;
   /** Non-fatal warnings from SimpleFIN (e.g. a bank connection lagging). */
   sfErrors: { msg: string }[];
+  newTransactions: SyncQueueItem[];
 }
 
 export async function runSync(opts: {
@@ -54,6 +59,7 @@ export async function runSync(opts: {
     skipped?: number;
     chunksUsed?: number;
     sfErrors?: { msg: string }[];
+    newTransactions?: SyncQueueItem[];
     error?: string;
   };
   if (!res.ok) throw new Error(data.error ?? "Sync failed");
@@ -62,6 +68,7 @@ export async function runSync(opts: {
     skipped: data.skipped ?? 0,
     chunksUsed: data.chunksUsed ?? 1,
     sfErrors: data.sfErrors ?? [],
+    newTransactions: data.newTransactions ?? [],
   };
 }
 
@@ -74,6 +81,7 @@ export function SimpleFINSyncButton({ accountId, lastSyncAt }: Props) {
   const [showRange, setShowRange] = useState(false);
   const [fromDate, setFromDate] = useState(ytdStart());
   const [toDate, setToDate] = useState(today());
+  const [categorizeItems, setCategorizeItems] = useState<SyncQueueItem[] | null>(null);
 
   async function sync(startDate?: string, endDate?: string) {
     if (busy) return;
@@ -87,6 +95,9 @@ export function SimpleFINSyncButton({ accountId, lastSyncAt }: Props) {
       const chunks = r.chunksUsed > 1 ? ` · ${r.chunksUsed} API requests used` : "";
       setResult(`+${r.imported} new${chunks}`);
       setSfErrors(r.sfErrors);
+      if (r.newTransactions.length > 0) {
+        setCategorizeItems(r.newTransactions);
+      }
       router.refresh();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Sync failed");
@@ -177,6 +188,16 @@ export function SimpleFINSyncButton({ accountId, lastSyncAt }: Props) {
             </p>
           ))}
         </div>
+      )}
+
+      {categorizeItems !== null && (
+        <PostSyncCategorizeModal
+          items={categorizeItems}
+          onClose={() => {
+            setCategorizeItems(null);
+            router.refresh();
+          }}
+        />
       )}
     </div>
   );

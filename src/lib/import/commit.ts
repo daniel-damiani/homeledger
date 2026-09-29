@@ -22,6 +22,13 @@ export async function commitImport(opts: {
   let skipped = 0;
   let linked = 0;
   let balanceDelta = 0;
+  const importedTransactions: {
+    id: string;
+    payee: string;
+    date: string;
+    amountCents: number;
+    categoryId: string | null;
+  }[] = [];
 
   for (const row of opts.rows) {
     // Secondary dedup: catch cross-format duplicates (e.g. OFX re-import after CSV).
@@ -68,6 +75,13 @@ export async function commitImport(opts: {
       });
       imported += 1;
       balanceDelta += row.amountCents;
+      importedTransactions.push({
+        id: created.id,
+        payee: created.payee,
+        date: created.date.toISOString().slice(0, 10),
+        amountCents: created.amountCents,
+        categoryId: created.categoryId,
+      });
       const link = await maybeAutoLinkLoan(created.id);
       if (link) linked += 1;
     } catch {
@@ -84,7 +98,30 @@ export async function commitImport(opts: {
     where: { id: batch.id },
     data: { importedCount: imported, skippedCount: skipped },
   });
-  return { ...updated, linkedCount: linked };
+
+  const catIds = [
+    ...new Set(importedTransactions.map((t) => t.categoryId).filter((id): id is string => Boolean(id))),
+  ];
+  const catNames =
+    catIds.length > 0
+      ? new Map(
+          (
+            await prisma.category.findMany({
+              where: { id: { in: catIds } },
+              select: { id: true, name: true, isTransfer: true },
+            })
+          ).map((c) => [c.id, c.isTransfer ? `${c.name} (transfer)` : c.name])
+        )
+      : new Map<string, string>();
+
+  return {
+    ...updated,
+    linkedCount: linked,
+    importedTransactions: importedTransactions.map((t) => ({
+      ...t,
+      categoryName: t.categoryId ? (catNames.get(t.categoryId) ?? null) : null,
+    })),
+  };
 }
 
 export async function undoImportBatch(batchId: string) {
